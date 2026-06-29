@@ -6,9 +6,9 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from sdfusion.utils.mesh import sdf_to_mesh
-from sdfusion.utils.metrics import sdf_stats
-from sdfusion.utils.sdf_io import save_sdf_npy
+from utils.mesh import sdf_to_mesh
+from utils.metrics import sdf_stats
+from utils.sdf_io import save_sdf_npy
 
 
 @torch.no_grad()

@@ -6,7 +6,7 @@ from typing import Any
 import torch
 from torch import nn
 
-from sdfusion.modules.vqvae import Decoder3D, Encoder3D, VectorQuantizer
+from modules.vqvae import Decoder3D, Encoder3D, VectorQuantizer
 
 
 class SDFVQVAE(nn.Module):
