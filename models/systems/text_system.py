@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sdfusion.modules.conditioners.text_conditioner import TextConditioner
+from modules.conditioners.text_conditioner import TextConditioner
 
 from .base_system import BaseSDFusionSystem
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sdfusion.modules.conditioners.image_conditioner import ImageConditioner
+from modules.conditioners.image_conditioner import ImageConditioner
 
 from .base_system import BaseSDFusionSystem
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sdfusion.modules.conditioners.multimodal_conditioner import MultiModalConditioner
+from modules.conditioners.multimodal_conditioner import MultiModalConditioner
 
 from .base_system import BaseSDFusionSystem
 

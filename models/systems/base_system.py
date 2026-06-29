@@ -6,8 +6,8 @@ from typing import Any
 import torch
 from torch import nn
 
-from sdfusion.models.vqvae import SDFVQVAE
-from sdfusion.modules.diffusion import DDIMSampler, GaussianDiffusion, UNet3D
+from models.vqvae import SDFVQVAE
+from modules.diffusion import DDIMSampler, GaussianDiffusion, UNet3D
 
 
 class BaseSDFusionSystem(nn.Module):

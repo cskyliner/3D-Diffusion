@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sdfusion.modules.conditioners.partial_shape_conditioner import PartialShapeConditioner
+from modules.conditioners.partial_shape_conditioner import PartialShapeConditioner
 
 from .base_system import BaseSDFusionSystem
 
