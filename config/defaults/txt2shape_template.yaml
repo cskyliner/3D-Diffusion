@@ -1,0 +1,7 @@
+project: SDFusion-Refactored
+task: txt2shape
+implemented: false
+status: reserved_interface
+conditioning_key: crossattn
+conditioner: text
+todo: Migrate BERT/text encoder and classifier-free text guidance in stage 2.

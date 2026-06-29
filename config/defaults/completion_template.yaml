@@ -1,0 +1,7 @@
+project: SDFusion-Refactored
+task: completion
+implemented: false
+status: reserved_interface
+conditioning_key: concat
+conditioner: partial
+todo: Migrate partial SDF masks and completion sampling in stage 2.

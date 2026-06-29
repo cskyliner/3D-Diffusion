@@ -1,0 +1,7 @@
+project: SDFusion-Refactored
+task: img2shape
+implemented: false
+status: reserved_interface
+conditioning_key: crossattn
+conditioner: image
+todo: Migrate image encoder conditioning in stage 2.

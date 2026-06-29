@@ -1,0 +1,7 @@
+project: SDFusion-Refactored
+task: mm2shape
+implemented: false
+status: reserved_interface
+conditioning_key: hybrid
+conditioner: multimodal
+todo: Migrate image/text/partial fusion and modality weights in stage 2.
