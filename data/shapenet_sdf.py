@@ -27,6 +27,7 @@ class ShapeNetSDFDataset(Dataset):
         max_samples: Optional[int] = None,
         filelist: Optional[str | Path | Iterable[str]] = None,
         trunc_thres: float = 0.0,
+        split_file_root: Optional[str | Path] = None,
     ) -> None:
         if category == "all":
             raise NotImplementedError("Multi-class ShapeNet loading is reserved for a later stage.")
@@ -40,6 +41,7 @@ class ShapeNetSDFDataset(Dataset):
         self.split = split
         self.res = int(res)
         self.trunc_thres = float(trunc_thres)
+        self.split_file_root = Path(split_file_root) if split_file_root is not None else None
         self.base_dir = self.data_root / "ShapeNet" / "SDF_v1" / f"resolution_{self.res}" / self.cat_id
         self.samples = self._build_samples(filelist)
         if max_samples is not None:
@@ -54,9 +56,20 @@ class ShapeNetSDFDataset(Dataset):
     def _build_samples(self, filelist: Optional[str | Path | Iterable[str]]) -> list[Path]:
         model_ids = self._read_filelist(filelist)
         if model_ids is None:
-            legacy = Path("dataset_info_files") / "ShapeNet_filelists" / f"{self.cat_id}_{self.split}.lst"
-            if legacy.exists():
-                model_ids = self._read_filelist(legacy)
+            candidates = [
+                Path("dataset_info_files") / "ShapeNet_filelists" / f"{self.cat_id}_{self.split}.lst",
+                Path(__file__).resolve().parents[2]
+                / "SDFusion-master"
+                / "dataset_info_files"
+                / "ShapeNet_filelists"
+                / f"{self.cat_id}_{self.split}.lst",
+            ]
+            if self.split_file_root is not None:
+                candidates.insert(0, self.split_file_root / f"{self.cat_id}_{self.split}.lst")
+            for legacy in candidates:
+                if legacy.exists():
+                    model_ids = self._read_filelist(legacy)
+                    break
         if model_ids is None:
             if not self.base_dir.exists():
                 return []
@@ -66,7 +79,7 @@ class ShapeNetSDFDataset(Dataset):
         missing: list[Path] = []
         for item in model_ids:
             path = Path(item)
-            if not path.suffix == ".h5":
+            if path.suffix not in {".h5", ".npy", ".npz"}:
                 path = self.base_dir / item / "ori_sample_grid.h5"
             if path.exists():
                 samples.append(path)
@@ -84,6 +97,10 @@ class ShapeNetSDFDataset(Dataset):
             return None
         if isinstance(filelist, (str, Path)):
             filelist_path = Path(filelist)
+            if not filelist_path.is_absolute() and not filelist_path.exists():
+                data_relative = self.data_root / filelist_path
+                if data_relative.exists():
+                    filelist_path = data_relative
             if not filelist_path.exists():
                 raise FileNotFoundError(f"ShapeNet filelist not found: {filelist_path}")
             with filelist_path.open("r", encoding="utf-8") as handle:
@@ -95,10 +112,21 @@ class ShapeNetSDFDataset(Dataset):
 
     def __getitem__(self, index: int) -> dict[str, object]:
         path = self.samples[index]
-        with h5py.File(path, "r") as h5_file:
-            if "pc_sdf_sample" not in h5_file:
-                raise KeyError(f"Missing dataset 'pc_sdf_sample' in {path}")
-            sdf = np.asarray(h5_file["pc_sdf_sample"], dtype=np.float32).reshape(1, self.res, self.res, self.res)
+        if path.suffix == ".h5":
+            with h5py.File(path, "r") as h5_file:
+                if "pc_sdf_sample" in h5_file:
+                    sdf = np.asarray(h5_file["pc_sdf_sample"], dtype=np.float32)
+                elif "sdf" in h5_file:
+                    sdf = np.asarray(h5_file["sdf"], dtype=np.float32)
+                else:
+                    raise KeyError(f"Missing dataset 'pc_sdf_sample' or 'sdf' in {path}")
+        elif path.suffix == ".npz":
+            npz = np.load(path)
+            key = "sdf" if "sdf" in npz else npz.files[0]
+            sdf = np.asarray(npz[key], dtype=np.float32)
+        else:
+            sdf = np.asarray(np.load(path), dtype=np.float32)
+        sdf = sdf.reshape(1, self.res, self.res, self.res)
         tensor = torch.from_numpy(sdf)
         if self.trunc_thres != 0.0:
             tensor = torch.clamp(tensor, min=-self.trunc_thres, max=self.trunc_thres)

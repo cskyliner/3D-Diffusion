@@ -16,6 +16,8 @@ class DDIMSampler:
         steps: int = 100,
         eta: float = 0.0,
         cond: object = None,
+        guidance_scale: float = 1.0,
+        unconditional_cond: object = None,
         device: torch.device | str = "cpu",
     ) -> torch.Tensor:
         diffusion = self.diffusion
@@ -25,7 +27,13 @@ class DDIMSampler:
         x = torch.randn(shape, device=device)
         for index, step in enumerate(times):
             t = torch.full((shape[0],), int(step.item()), device=device, dtype=torch.long)
-            eps = diffusion.model(x, t, cond)
+            eps = diffusion.apply_model(
+                x,
+                t,
+                cond,
+                guidance_scale=guidance_scale,
+                unconditional_cond=unconditional_cond,
+            )
             alpha = extract_into_tensor(diffusion.alphas_cumprod, t, x.shape)
             pred_x0 = (x - (1.0 - alpha).sqrt() * eps) / alpha.sqrt()
             if index == len(times) - 1:

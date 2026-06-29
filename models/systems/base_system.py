@@ -7,7 +7,7 @@ import torch
 from torch import nn
 
 from models.vqvae import SDFVQVAE
-from modules.diffusion import DDIMSampler, GaussianDiffusion, UNet3D
+from modules.diffusion import DDIMSampler, GaussianDiffusion, PLMSSampler, UNet3D
 
 
 class BaseSDFusionSystem(nn.Module):
@@ -22,13 +22,23 @@ class BaseSDFusionSystem(nn.Module):
         linear_start: float = 1.0e-4,
         linear_end: float = 2.0e-2,
         scale_factor: float = 1.0,
+        conditioning_key: str | None = None,
+        concat_channels: int = 0,
+        context_dim: int = 0,
     ) -> None:
         super().__init__()
         self.vqvae = vqvae
         self.scale_factor = float(scale_factor)
         self.latent_channels = int(latent_channels)
         self.latent_size = int(latent_size)
-        self.denoiser = UNet3D(in_channels=latent_channels, base_channels=unet_base_channels)
+        self.conditioning_key = conditioning_key
+        self.denoiser = UNet3D(
+            in_channels=latent_channels,
+            base_channels=unet_base_channels,
+            conditioning_key=conditioning_key,
+            concat_channels=concat_channels,
+            context_dim=context_dim,
+        )
         self.diffusion = GaussianDiffusion(
             self.denoiser,
             timesteps=timesteps,
@@ -61,15 +71,48 @@ class BaseSDFusionSystem(nn.Module):
         return self.diffusion_loss(batch)
 
     @torch.no_grad()
-    def sample(self, num_samples: int, sampler: str = "ddim", steps: int = 100, eta: float = 0.0) -> torch.Tensor:
+    def sample(
+        self,
+        num_samples: int,
+        sampler: str = "ddim",
+        steps: int = 100,
+        eta: float = 0.0,
+        cond: object = None,
+        guidance_scale: float = 1.0,
+        unconditional_cond: object = None,
+    ) -> torch.Tensor:
         device = next(self.parameters()).device
         shape = (num_samples, self.latent_channels, self.latent_size, self.latent_size, self.latent_size)
         if sampler == "ddpm":
-            latent = self.diffusion.p_sample_loop(shape, device=device, cond=None)
+            latent = self.diffusion.p_sample_loop(
+                shape,
+                device=device,
+                cond=cond,
+                guidance_scale=guidance_scale,
+                unconditional_cond=unconditional_cond,
+            )
         elif sampler == "ddim":
-            latent = DDIMSampler(self.diffusion).sample(shape, steps=steps, eta=eta, cond=None, device=device)
+            latent = DDIMSampler(self.diffusion).sample(
+                shape,
+                steps=steps,
+                eta=eta,
+                cond=cond,
+                guidance_scale=guidance_scale,
+                unconditional_cond=unconditional_cond,
+                device=device,
+            )
+        elif sampler == "plms":
+            latent = PLMSSampler(self.diffusion).sample(
+                shape,
+                steps=steps,
+                eta=eta,
+                cond=cond,
+                guidance_scale=guidance_scale,
+                unconditional_cond=unconditional_cond,
+                device=device,
+            )
         else:
-            raise ValueError(f"Unknown sampler '{sampler}'. Use 'ddim' or 'ddpm'.")
+            raise ValueError(f"Unknown sampler '{sampler}'. Use 'ddim', 'ddpm', or 'plms'.")
         return self.decode_latent_to_sdf(latent)
 
     def save_checkpoint(self, path: str | Path, **extra: Any) -> None:

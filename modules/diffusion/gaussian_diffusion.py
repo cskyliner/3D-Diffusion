@@ -40,6 +40,20 @@ class GaussianDiffusion(nn.Module):
         self.register_buffer("posterior_mean_coef1", betas * torch.sqrt(alphas_cumprod_prev) / (1.0 - alphas_cumprod))
         self.register_buffer("posterior_mean_coef2", (1.0 - alphas_cumprod_prev) * torch.sqrt(alphas) / (1.0 - alphas_cumprod))
 
+    def apply_model(
+        self,
+        x: torch.Tensor,
+        t: torch.Tensor,
+        cond: object = None,
+        guidance_scale: float = 1.0,
+        unconditional_cond: object = None,
+    ) -> torch.Tensor:
+        if guidance_scale == 1.0 or unconditional_cond is None:
+            return self.model(x, t, cond)
+        cond_eps = self.model(x, t, cond)
+        uncond_eps = self.model(x, t, unconditional_cond)
+        return uncond_eps + guidance_scale * (cond_eps - uncond_eps)
+
     def q_sample(self, x_start: torch.Tensor, t: torch.Tensor, noise: torch.Tensor | None = None) -> torch.Tensor:
         noise = torch.randn_like(x_start) if noise is None else noise
         return (
@@ -56,12 +70,19 @@ class GaussianDiffusion(nn.Module):
     def p_losses(self, x_start: torch.Tensor, t: torch.Tensor, cond: object = None) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         noise = torch.randn_like(x_start)
         x_noisy = self.q_sample(x_start, t, noise)
-        predicted_noise = self.model(x_noisy, t, cond)
+        predicted_noise = self.apply_model(x_noisy, t, cond)
         loss_simple = F.mse_loss(predicted_noise, noise)
         return loss_simple, {"loss_total": loss_simple.detach(), "loss_simple": loss_simple.detach()}
 
-    def p_mean_variance(self, x: torch.Tensor, t: torch.Tensor, cond: object = None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        eps = self.model(x, t, cond)
+    def p_mean_variance(
+        self,
+        x: torch.Tensor,
+        t: torch.Tensor,
+        cond: object = None,
+        guidance_scale: float = 1.0,
+        unconditional_cond: object = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        eps = self.apply_model(x, t, cond, guidance_scale=guidance_scale, unconditional_cond=unconditional_cond)
         x_recon = self.predict_start_from_noise(x, t, eps)
         model_mean = (
             extract_into_tensor(self.posterior_mean_coef1, t, x.shape) * x_recon
@@ -71,11 +92,24 @@ class GaussianDiffusion(nn.Module):
         return model_mean, log_variance, x_recon
 
     @torch.no_grad()
-    def p_sample_loop(self, shape: tuple[int, ...], device: torch.device, cond: object = None) -> torch.Tensor:
+    def p_sample_loop(
+        self,
+        shape: tuple[int, ...],
+        device: torch.device,
+        cond: object = None,
+        guidance_scale: float = 1.0,
+        unconditional_cond: object = None,
+    ) -> torch.Tensor:
         x = torch.randn(shape, device=device)
         for i in reversed(range(self.num_timesteps)):
             t = torch.full((shape[0],), i, device=device, dtype=torch.long)
-            mean, log_variance, _ = self.p_mean_variance(x, t, cond)
+            mean, log_variance, _ = self.p_mean_variance(
+                x,
+                t,
+                cond,
+                guidance_scale=guidance_scale,
+                unconditional_cond=unconditional_cond,
+            )
             noise = torch.randn_like(x) if i > 0 else torch.zeros_like(x)
             x = mean + (0.5 * log_variance).exp() * noise
         return x

@@ -15,6 +15,7 @@ def vqvae_loss(
     return total, {
         "loss_total": total.detach(),
         "loss_rec": reconstruction_loss.detach(),
+        "loss_nll": reconstruction_loss.detach(),
         "loss_codebook": codebook_loss.detach().mean(),
     }
 

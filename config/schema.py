@@ -17,20 +17,24 @@ class DataConfig:
     res: int = 64
     max_samples: Optional[int] = None
     filelist: Optional[str] = None
+    split_file_root: Optional[str] = None
     trunc_thres: float = 0.2
 
 
 @dataclass
 class VQVAEConfig:
+    architecture: Literal["simple", "legacy"] = "legacy"
     in_channels: int = 1
     out_channels: int = 1
     resolution: int = 64
     base_channels: int = 64
     channel_multipliers: list[int] = field(default_factory=lambda: [1, 2, 4])
-    z_channels: int = 256
-    embed_dim: int = 256
-    n_embed: int = 1024
+    z_channels: int = 3
+    embed_dim: int = 3
+    n_embed: int = 8192
     codebook_weight: float = 1.0
+    ddconfig: dict[str, Any] = field(default_factory=dict)
+    legacy_quantizer_loss: bool = False
 
 
 @dataclass
@@ -40,9 +44,12 @@ class DiffusionConfig:
     linear_start: float = 1.0e-4
     linear_end: float = 2.0e-2
     scale_factor: float = 1.0
-    latent_channels: int = 256
+    latent_channels: int = 3
     latent_size: int = 16
     unet_base_channels: int = 128
+    concat_channels: int = 0
+    context_dim: int = 0
+    guidance_scale: float = 1.0
     ddim_eta: float = 0.0
 
 
