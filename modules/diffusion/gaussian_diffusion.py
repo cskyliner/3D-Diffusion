@@ -32,6 +32,8 @@ def _maybe_progress(iterable, enabled: bool, total: int | None = None, desc: str
 
 
 class GaussianDiffusion(nn.Module):
+    """DDPM objective and reverse process for latent SDF diffusion."""
+
     def __init__(
         self,
         model: nn.Module,
@@ -71,6 +73,7 @@ class GaussianDiffusion(nn.Module):
         guidance_scale: float = 1.0,
         unconditional_cond: object = None,
     ) -> torch.Tensor:
+        """Run the denoiser, optionally applying classifier-free guidance."""
         if guidance_scale == 1.0 or unconditional_cond is None:
             return self.model(x, t, cond)
         cond_eps = self.model(x, t, cond)
@@ -78,6 +81,7 @@ class GaussianDiffusion(nn.Module):
         return uncond_eps + guidance_scale * (cond_eps - uncond_eps)
 
     def q_sample(self, x_start: torch.Tensor, t: torch.Tensor, noise: torch.Tensor | None = None) -> torch.Tensor:
+        """Add forward-process Gaussian noise to clean latents at timestep t."""
         noise = torch.randn_like(x_start) if noise is None else noise
         return (
             extract_into_tensor(self.sqrt_alphas_cumprod, t, x_start.shape) * x_start
@@ -85,12 +89,14 @@ class GaussianDiffusion(nn.Module):
         )
 
     def predict_start_from_noise(self, x_t: torch.Tensor, t: torch.Tensor, noise: torch.Tensor) -> torch.Tensor:
+        """Recover the predicted clean latent x0 from noisy latent xt and predicted noise."""
         return (
             extract_into_tensor(self.sqrt_recip_alphas_cumprod, t, x_t.shape) * x_t
             - extract_into_tensor(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape) * noise
         )
 
     def p_losses(self, x_start: torch.Tensor, t: torch.Tensor, cond: object = None) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+        """Train the denoiser to predict the sampled Gaussian noise."""
         noise = torch.randn_like(x_start)
         x_noisy = self.q_sample(x_start, t, noise)
         predicted_noise = self.apply_model(x_noisy, t, cond)
@@ -106,6 +112,7 @@ class GaussianDiffusion(nn.Module):
         unconditional_cond: object = None,
         clip_denoised: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Compute DDPM posterior mean/variance for the previous timestep."""
         eps = self.apply_model(x, t, cond, guidance_scale=guidance_scale, unconditional_cond=unconditional_cond)
         x_recon = self.predict_start_from_noise(x, t, eps)
         if clip_denoised:
@@ -127,6 +134,7 @@ class GaussianDiffusion(nn.Module):
         unconditional_cond: object = None,
         clip_denoised: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Compute posterior parameters for a skipped reverse step."""
         eps = self.apply_model(x, t, cond, guidance_scale=guidance_scale, unconditional_cond=unconditional_cond)
         x_recon = self.predict_start_from_noise(x, t, eps)
         if clip_denoised:
@@ -159,6 +167,7 @@ class GaussianDiffusion(nn.Module):
         temperature: float = 1.0,
         noise_dropout: float = 0.0,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Take one stochastic DDPM reverse step and return the new latent plus predicted x0."""
         if prev_t is None:
             mean, log_variance, pred_x0 = self.p_mean_variance(
                 x,
@@ -207,6 +216,7 @@ class GaussianDiffusion(nn.Module):
         img_callback: TensorCallback | None = None,
         progress: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, dict[str, list[torch.Tensor]]]:
+        """Run the DDPM reverse chain, optionally with skipped steps and intermediate logging."""
         device = torch.device(device)
         x = torch.randn(shape, device=device) if x_T is None else x_T.to(device)
         timesteps = _make_sampling_timesteps(self.num_timesteps, steps, device)

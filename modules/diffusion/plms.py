@@ -21,6 +21,8 @@ def _maybe_progress(iterable, enabled: bool, total: int | None = None, desc: str
 
 
 class PLMSSampler:
+    """Multistep sampler that improves DDIM-style updates using previous noise predictions."""
+
     def __init__(self, diffusion) -> None:
         self.diffusion = diffusion
 
@@ -30,6 +32,7 @@ class PLMSSampler:
         ddim_discretize: str = "uniform",
         device: torch.device | str = "cpu",
     ) -> dict[str, torch.Tensor]:
+        """Prepare the deterministic PLMS schedule, sharing DDIM timestep logic."""
         device = torch.device(device)
         timesteps = make_ddim_timesteps(ddim_discretize, steps, self.diffusion.num_timesteps, device)
         sigmas, alphas, alphas_prev = make_ddim_sampling_parameters(
@@ -55,6 +58,7 @@ class PLMSSampler:
         score_corrector: Callable | None,
         corrector_kwargs: dict | None,
     ) -> torch.Tensor:
+        """Predict noise for one PLMS step, with optional score correction."""
         eps = self.diffusion.apply_model(
             x,
             t,
@@ -76,6 +80,7 @@ class PLMSSampler:
         clip_denoised: bool = False,
         quantize_denoised: Callable[[torch.Tensor], torch.Tensor] | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Convert a noise estimate into the previous latent and predicted x0."""
         alpha = schedule["alphas"][index].view(1, *([1] * (x.ndim - 1))).to(x)
         alpha_prev = schedule["alphas_prev"][index].view(1, *([1] * (x.ndim - 1))).to(x)
         sqrt_one_minus_alpha = schedule["sqrt_one_minus_alphas"][index].view(1, *([1] * (x.ndim - 1))).to(x)
@@ -105,6 +110,7 @@ class PLMSSampler:
         score_corrector: Callable | None = None,
         corrector_kwargs: dict | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Take one PLMS reverse step using Adams-Bashforth-style eps history."""
         eps = self._get_model_eps(x, t, cond, guidance_scale, unconditional_cond, score_corrector, corrector_kwargs)
         if index == 0:
             x_prev, pred_x0 = self._get_x_prev_and_pred_x0(x, eps, index, schedule, clip_denoised, quantize_denoised)
@@ -165,6 +171,7 @@ class PLMSSampler:
         img_callback: TensorCallback | None = None,
         progress: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, dict[str, list[torch.Tensor]]]:
+        """Run deterministic PLMS sampling from noise or x_T to a clean latent sample."""
         if eta != 0.0:
             raise ValueError("PLMS sampler only supports eta=0 in this implementation.")
         diffusion = self.diffusion

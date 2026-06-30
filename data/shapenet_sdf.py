@@ -18,6 +18,8 @@ DEFAULT_CATEGORY_IDS = {
 
 
 class ShapeNetSDFDataset(Dataset):
+    """Load preprocessed single-category ShapeNet SDF grids for VQ-VAE and diffusion training."""
+
     def __init__(
         self,
         data_root: str | Path,
@@ -29,6 +31,7 @@ class ShapeNetSDFDataset(Dataset):
         trunc_thres: float = 0.0,
         split_file_root: Optional[str | Path] = None,
     ) -> None:
+        """Resolve category paths, split/filelist choices, and available SDF sample files."""
         if category == "all":
             raise NotImplementedError("Multi-class ShapeNet loading is reserved for a later stage.")
         if category not in DEFAULT_CATEGORY_IDS:
@@ -54,6 +57,7 @@ class ShapeNetSDFDataset(Dataset):
             )
 
     def _build_samples(self, filelist: Optional[str | Path | Iterable[str]]) -> list[Path]:
+        """Build concrete SDF file paths from an explicit filelist, split file, or preprocessed tree."""
         model_ids = self._read_filelist(filelist)
         if model_ids is None:
             candidates = [
@@ -104,6 +108,7 @@ class ShapeNetSDFDataset(Dataset):
         return samples
 
     def _read_filelist(self, filelist: Optional[str | Path | Iterable[str]]) -> Optional[list[str]]:
+        """Read model ids or SDF paths from a text file/list, returning None when no filelist is configured."""
         if filelist is None:
             return None
         if isinstance(filelist, (str, Path)):
@@ -122,6 +127,7 @@ class ShapeNetSDFDataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, index: int) -> dict[str, object]:
+        """Load one SDF grid as a [1, res, res, res] tensor plus ShapeNet metadata."""
         path = self.samples[index]
         if path.suffix == ".h5":
             with h5py.File(path, "r") as h5_file:

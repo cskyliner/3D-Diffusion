@@ -34,6 +34,10 @@ dev = [
   "pytest>=8.0",
   "ruff>=0.6",
 ]
+preprocess = [
+  "rtree>=1.2",
+  "trimesh>=4.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]

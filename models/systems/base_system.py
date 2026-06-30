@@ -11,6 +11,8 @@ from modules.diffusion import DDIMSampler, DiffusionUNet, GaussianDiffusion, PLM
 
 
 class BaseSDFusionSystem(nn.Module):
+    """Base system that connects frozen SDF VQ-VAE latents with a trainable diffusion denoiser."""
+
     def __init__(
         self,
         vqvae: SDFVQVAE,
@@ -74,12 +76,14 @@ class BaseSDFusionSystem(nn.Module):
             parameter.requires_grad = False
 
     def encode_sdf_to_latent(self, sdf: torch.Tensor) -> torch.Tensor:
+        """Encode SDF grids into quantized, scaled latents used by diffusion training."""
         self.vqvae.eval()
         z = self.vqvae.encode(sdf)
         z_q, _, _ = self.vqvae.quantize_latent(z)
         return z_q * self.scale_factor
 
     def decode_latent_to_sdf(self, latent: torch.Tensor) -> torch.Tensor:
+        """Decode scaled diffusion latents back into SDF grids."""
         self.vqvae.eval()
         return self.vqvae.decode(latent / self.scale_factor)
 
@@ -87,6 +91,7 @@ class BaseSDFusionSystem(nn.Module):
         raise NotImplementedError
 
     def diffusion_loss(self, batch: dict) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+        """Compute one latent denoising loss from a batch of SDF grids."""
         sdf = batch["sdf"]
         with torch.no_grad():
             z = self.encode_sdf_to_latent(sdf)
@@ -94,6 +99,7 @@ class BaseSDFusionSystem(nn.Module):
         return self.diffusion.p_losses(z, t, self.get_condition(batch))
 
     def forward(self, batch: dict) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+        """Alias the training forward pass to diffusion_loss."""
         return self.diffusion_loss(batch)
 
     @torch.no_grad()
@@ -119,6 +125,7 @@ class BaseSDFusionSystem(nn.Module):
         img_callback=None,
         progress: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, dict[str, list[torch.Tensor]]]:
+        """Sample latent grids with DDPM/DDIM/PLMS and decode them into SDF outputs."""
         device = next(self.parameters()).device
         shape = (num_samples, self.latent_channels, self.latent_size, self.latent_size, self.latent_size)
         if sampler == "ddpm":

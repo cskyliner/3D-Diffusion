@@ -15,6 +15,7 @@ def make_ddim_timesteps(
     num_ddpm_timesteps: int,
     device: torch.device,
 ) -> torch.Tensor:
+    """Select the reduced DDIM timestep schedule from the original DDPM timeline."""
     if num_ddim_timesteps <= 0:
         raise ValueError("steps must be a positive integer.")
     if num_ddim_timesteps > num_ddpm_timesteps:
@@ -40,6 +41,7 @@ def make_ddim_sampling_parameters(
     timesteps: torch.Tensor,
     eta: float,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Compute sigma, alpha, and previous-alpha values for DDIM updates."""
     alphas = alphas_cumprod[timesteps]
     alphas_prev = torch.cat([alphas_cumprod.new_ones(1), alphas[:-1]], dim=0)
     sigmas = eta * (((1.0 - alphas_prev) / (1.0 - alphas)) * (1.0 - alphas / alphas_prev)).clamp_min(0.0).sqrt()
@@ -58,6 +60,8 @@ def _maybe_progress(iterable, enabled: bool, total: int | None = None, desc: str
 
 
 class DDIMSampler:
+    """Fast sampler that follows a deterministic or eta-noisy DDIM reverse path."""
+
     def __init__(self, diffusion) -> None:
         self.diffusion = diffusion
 
@@ -68,6 +72,7 @@ class DDIMSampler:
         eta: float = 0.0,
         device: torch.device | str = "cpu",
     ) -> dict[str, torch.Tensor]:
+        """Prepare DDIM timesteps and per-step constants on the target device."""
         device = torch.device(device)
         timesteps = make_ddim_timesteps(ddim_discretize, steps, self.diffusion.num_timesteps, device)
         sigmas, alphas, alphas_prev = make_ddim_sampling_parameters(self.diffusion.alphas_cumprod.to(device), timesteps, eta)
@@ -89,6 +94,7 @@ class DDIMSampler:
         score_corrector: Callable | None,
         corrector_kwargs: dict | None,
     ) -> torch.Tensor:
+        """Predict noise for one sampler step, with optional score correction."""
         eps = self.diffusion.apply_model(
             x,
             t,
@@ -117,6 +123,7 @@ class DDIMSampler:
         score_corrector: Callable | None = None,
         corrector_kwargs: dict | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Take one DDIM reverse step and return the updated latent plus predicted x0."""
         eps = self._get_model_eps(x, t, cond, guidance_scale, unconditional_cond, score_corrector, corrector_kwargs)
         alpha = schedule["alphas"][index].view(1, *([1] * (x.ndim - 1))).to(x)
         alpha_prev = schedule["alphas_prev"][index].view(1, *([1] * (x.ndim - 1))).to(x)
@@ -161,6 +168,7 @@ class DDIMSampler:
         img_callback: TensorCallback | None = None,
         progress: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, dict[str, list[torch.Tensor]]]:
+        """Run the DDIM reverse process from noise or x_T to a clean latent sample."""
         diffusion = self.diffusion
         device = torch.device(device)
         schedule = self.make_schedule(steps, ddim_discretize=ddim_discretize, eta=eta, device=device)

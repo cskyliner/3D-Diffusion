@@ -21,16 +21,19 @@ from utils.seed import seed_everything
 
 
 def resolve_device(name: str) -> torch.device:
+    """Return the requested torch device, falling back to CPU when CUDA is unavailable."""
     if name == "cuda" and not torch.cuda.is_available():
         return torch.device("cpu")
     return torch.device(name)
 
 
 def move_to_device(batch: dict[str, Any], device: torch.device) -> dict[str, Any]:
+    """Move tensor values in a dataloader batch to the training/evaluation device."""
     return {key: value.to(device) if torch.is_tensor(value) else value for key, value in batch.items()}
 
 
 def build_dataloader(config: dict[str, Any], split: str | None = None, shuffle: bool = True) -> DataLoader:
+    """Create a dataset and dataloader from the config data/train sections."""
     data_cfg = dict(config.get("data", {}))
     if split is not None:
         data_cfg["split"] = split
@@ -48,11 +51,13 @@ def build_dataloader(config: dict[str, Any], split: str | None = None, shuffle: 
 
 
 def build_vqvae(config: dict[str, Any]) -> SDFVQVAE:
+    """Instantiate the SDF VQ-VAE from the config vqvae section."""
     vq_cfg = dict(config.get("vqvae", {}))
     return SDFVQVAE(**vq_cfg)
 
 
 def build_uncond_system(config: dict[str, Any], vqvae: SDFVQVAE) -> UncondSDFusionSystem:
+    """Wrap a frozen VQ-VAE with the configured unconditional latent diffusion system."""
     diffusion_cfg = dict(config.get("diffusion", {}))
     return UncondSDFusionSystem(
         vqvae=vqvae,
@@ -73,6 +78,7 @@ def build_uncond_system(config: dict[str, Any], vqvae: SDFVQVAE) -> UncondSDFusi
 
 
 def vqvae_loss_kwargs(config: dict[str, Any]) -> dict[str, Any]:
+    """Extract optional VQ-VAE geometry loss weights from config."""
     vq_cfg = config.get("vqvae", {})
     return {
         "codebook_weight": float(vq_cfg.get("codebook_weight", 1.0)),
@@ -87,6 +93,8 @@ def vqvae_loss_kwargs(config: dict[str, Any]) -> dict[str, Any]:
 
 
 class JsonlLogger:
+    """Append one JSON metrics row per line for long-running training jobs."""
+
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -103,6 +111,7 @@ def export_vqvae_reconstructions(
     out_dir: str | Path,
     max_items: int = 4,
 ) -> list[dict[str, Any]]:
+    """Save target/reconstructed SDFs and reconstructed meshes for VQ-VAE debugging."""
     output = Path(out_dir)
     output.mkdir(parents=True, exist_ok=True)
     sdf = batch["sdf"]
@@ -129,6 +138,7 @@ def evaluate_vqvae(
     max_batches: int | None = None,
     loss_kwargs: dict[str, Any] | None = None,
 ) -> dict[str, float]:
+    """Evaluate VQ-VAE reconstruction losses and occupancy IoU over a dataloader."""
     model.eval()
     losses: list[float] = []
     ious: list[torch.Tensor] = []
@@ -153,6 +163,7 @@ def evaluate_vqvae(
 
 @torch.no_grad()
 def evaluate_diffusion_loss(system: UncondSDFusionSystem, loader: DataLoader, device: torch.device, max_batches: int | None = None) -> dict[str, float]:
+    """Average denoising losses on validation SDF batches without optimizer updates."""
     system.eval()
     totals: dict[str, float] = {}
     count = 0
@@ -177,6 +188,7 @@ def export_diffusion_snapshot(
     steps: int = 100,
     sampler: str = "ddim",
 ) -> dict[str, Any]:
+    """Sample SDFs during diffusion training and export meshes plus aggregate sample metrics."""
     output = Path(out_dir)
     output.mkdir(parents=True, exist_ok=True)
     system.eval()
@@ -217,6 +229,7 @@ def export_diffusion_snapshot(
 
 
 def train_vqvae(config: dict[str, Any], out_dir: str | Path, resume: str | None = None) -> Path:
+    """Train the SDF VQ-VAE and periodically save checkpoints, metrics, and reconstructions."""
     train_cfg = config.get("train", {})
     seed_everything(int(train_cfg.get("seed", 0)))
     device = resolve_device(str(train_cfg.get("device", "cuda")))
@@ -271,6 +284,7 @@ def train_vqvae(config: dict[str, Any], out_dir: str | Path, resume: str | None 
 
 
 def train_diffusion(config: dict[str, Any], out_dir: str | Path, vqvae_ckpt: str, resume: str | None = None) -> Path:
+    """Train unconditional latent diffusion using a frozen, checkpoint-loaded VQ-VAE encoder/decoder."""
     train_cfg = config.get("train", {})
     seed_everything(int(train_cfg.get("seed", 0)))
     device = resolve_device(str(train_cfg.get("device", "cuda")))

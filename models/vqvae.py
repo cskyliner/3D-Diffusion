@@ -10,6 +10,8 @@ from modules.vqvae import Decoder3D, Encoder3D, LegacyDecoder3D, LegacyEncoder3D
 
 
 class SDFVQVAE(nn.Module):
+    """3D SDF VQ-VAE that maps voxel SDFs to quantized latents and reconstructs SDF grids."""
+
     def __init__(
         self,
         in_channels: int = 1,
@@ -63,23 +65,29 @@ class SDFVQVAE(nn.Module):
         return self.quantize
 
     def encode(self, sdf: torch.Tensor) -> torch.Tensor:
+        """Encode SDF grids into continuous latent features before vector quantization."""
         return self.quant_conv(self.encoder(sdf))
 
     def quantize_latent(self, z: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Vector-quantize latent features and return quantized latents, loss, and code indices."""
         return self.quantize(z)
 
     def encode_quantized(self, sdf: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Encode and quantize SDF grids in one call."""
         return self.quantize_latent(self.encode(sdf))
 
     def decode(self, z_q: torch.Tensor) -> torch.Tensor:
+        """Decode quantized latent grids back into SDF voxel grids."""
         return self.decoder(self.post_quant_conv(z_q))
 
     def decode_no_quant(self, z: torch.Tensor, force_not_quantize: bool = False) -> torch.Tensor:
+        """Decode latents, optionally applying quantization before the decoder."""
         if not force_not_quantize:
             z, _, _ = self.quantize_latent(z)
         return self.decode(z)
 
     def forward(self, sdf: torch.Tensor) -> dict[str, torch.Tensor]:
+        """Run the full VQ-VAE path and return latents, codebook loss, indices, and reconstruction."""
         z = self.encode(sdf)
         z_q, codebook_loss, indices = self.quantize_latent(z)
         reconstruction = self.decode(z_q)

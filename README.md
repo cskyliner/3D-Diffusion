@@ -35,6 +35,12 @@ pip install -e .
 
 Core dependencies are listed in `pyproject.toml`: `torch`, `numpy`, `h5py`, `PyYAML`, and `scikit-image`.
 
+For preprocessing raw ShapeNet `model.obj` files, install the optional mesh dependencies:
+
+```bash
+pip install -e ".[preprocess]"
+```
+
 ## Data Format
 
 Default ShapeNet SDF path:
@@ -50,6 +56,101 @@ data/
 ```
 
 For chairs, the synset is `03001627`. Each SDF should reshape to `[1, 64, 64, 64]`. The loader also accepts `.npy` and `.npz` SDF files when referenced by a filelist.
+
+## Preprocess ShapeNetCore OBJ Files
+
+Raw ShapeNetCore folders look like this:
+
+```text
+ShapeNetCore.v1/
+  03001627/
+    <model_id>/
+      images/
+      model.mtl
+      model.obj
+```
+
+The training loader does not read `model.obj` directly. Convert OBJ meshes into SDFusion-style `ori_sample_grid.h5` files first:
+
+```bash
+bash scripts/preprocess_chair.sh
+```
+
+The wrapper script uses project-relative defaults:
+
+```text
+SHAPENET_ROOT=data/ShapeNetCore.v1
+DATA_ROOT=data
+CATEGORY=chair
+```
+
+On AutoDL or another server, override them through environment variables:
+
+```bash
+SHAPENET_ROOT=/root/autodl-tmp/data/ShapeNetCore.v1 \
+DATA_ROOT=/root/autodl-tmp/data \
+CATEGORY=chair \
+bash scripts/preprocess_chair.sh
+```
+
+Equivalent explicit command:
+
+```bash
+python tools/preprocess_shapenet_obj_to_sdf.py \
+  --shapenet_root /root/autodl-tmp/data/ShapeNetCore.v1 \
+  --data_root /root/autodl-tmp/data \
+  --category chair \
+  --res 64 \
+  --backend trimesh \
+  --write_filelist
+```
+
+This writes files such as:
+
+```text
+/root/autodl-tmp/data/
+  ShapeNet/
+    SDF_v1/
+      resolution_64/
+        03001627/
+          <model_id>/
+            ori_sample_grid.h5
+```
+
+To process just one model while testing:
+
+```bash
+python tools/preprocess_shapenet_obj_to_sdf.py \
+  --shapenet_root /root/autodl-tmp/data/ShapeNetCore.v1 \
+  --data_root /root/autodl-tmp/data \
+  --category chair \
+  --model_id bed17aaa6ce899bed810b14a81e12eca \
+  --max_models 1 \
+  --backend trimesh \
+  --overwrite
+```
+
+The script has two backends:
+
+- `--backend trimesh`: pure Python fallback using `trimesh.proximity.signed_distance`; easiest to run after installing `.[preprocess]`.
+- `--backend sdfgen`: closer to the original SDFusion preprocessing path; pass `--sdfgen /path/to/SDFGen`.
+
+If `--write_filelist` is used, the script also writes a file like:
+
+```text
+/root/autodl-tmp/data/ShapeNet_filelists/03001627_train.lst
+```
+
+Then train with:
+
+```bash
+python tools/train_vqvae.py \
+  --config config/defaults/vqvae_snet_chair.yaml \
+  --out_dir outputs/vqvae_chair \
+  --override data.data_root=/root/autodl-tmp/data \
+  --override data.category=chair \
+  --override data.split_file_root=/root/autodl-tmp/data/ShapeNet_filelists
+```
 
 Inspect before training:
 
@@ -238,6 +339,7 @@ CATEGORY=${CATEGORY:-chair}
 Available scripts:
 
 - `bash scripts/smoke_test_imports.sh`
+- `bash scripts/preprocess_chair.sh`
 - `bash scripts/train_vqvae_chair.sh`
 - `bash scripts/train_diffusion_chair.sh`
 - `bash scripts/infer_uncond_chair.sh`
@@ -255,6 +357,7 @@ For reproducibility, run:
 
 ```bash
 bash scripts/smoke_test_imports.sh
+bash scripts/preprocess_chair.sh
 python tools/inspect_dataset.py --data_root data --category chair --res 64 --split train --max_samples 2
 bash scripts/train_vqvae_chair.sh
 python tools/compute_latent_stats.py --config config/defaults/vqvae_snet_chair.yaml --vqvae_ckpt outputs/vqvae_chair/checkpoints/vqvae_last.pt --out_dir outputs/vqvae_chair

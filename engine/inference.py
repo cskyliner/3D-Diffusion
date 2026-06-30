@@ -25,6 +25,7 @@ def generate_unconditional(
     temperature: float = 1.0,
     progress: bool = False,
 ) -> list[dict]:
+    """Generate unconditional samples, saving SDF arrays, PLY meshes, and per-sample metadata."""
     output_dir = Path(out_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     sdf_batch = system.sample(
