@@ -40,12 +40,12 @@ class ShapeNetSDFDataset(Dataset):
         self.cat_id = DEFAULT_CATEGORY_IDS[category]
         self.split = split
         self.res = int(res)
+        self.max_samples = int(max_samples) if max_samples is not None else None
         self.trunc_thres = float(trunc_thres)
         self.split_file_root = Path(split_file_root) if split_file_root is not None else None
         self.base_dir = self.data_root / "ShapeNet" / "SDF_v1" / f"resolution_{self.res}" / self.cat_id
+        self.total_candidates: int | None = None
         self.samples = self._build_samples(filelist)
-        if max_samples is not None:
-            self.samples = self.samples[: int(max_samples)]
         if not self.samples:
             expected = self.base_dir / "<model_id>" / "ori_sample_grid.h5"
             raise FileNotFoundError(
@@ -73,8 +73,19 @@ class ShapeNetSDFDataset(Dataset):
         if model_ids is None:
             if not self.base_dir.exists():
                 return []
-            return sorted(self.base_dir.glob("*/ori_sample_grid.h5"))
+            samples: list[Path] = []
+            for model_dir in self.base_dir.iterdir():
+                path = model_dir / "ori_sample_grid.h5"
+                if path.exists():
+                    samples.append(path)
+                    if self.max_samples is not None and len(samples) >= self.max_samples:
+                        break
+            self.total_candidates = None
+            return sorted(samples)
 
+        self.total_candidates = len(model_ids)
+        if self.max_samples is not None:
+            model_ids = model_ids[: self.max_samples]
         samples: list[Path] = []
         missing: list[Path] = []
         for item in model_ids:

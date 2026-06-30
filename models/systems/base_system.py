@@ -7,7 +7,7 @@ import torch
 from torch import nn
 
 from models.vqvae import SDFVQVAE
-from modules.diffusion import DDIMSampler, GaussianDiffusion, PLMSSampler, UNet3D
+from modules.diffusion import DDIMSampler, DiffusionUNet, GaussianDiffusion, PLMSSampler, UNet3D
 
 
 class BaseSDFusionSystem(nn.Module):
@@ -25,6 +25,8 @@ class BaseSDFusionSystem(nn.Module):
         conditioning_key: str | None = None,
         concat_channels: int = 0,
         context_dim: int = 0,
+        unet_architecture: str = "legacy_openai",
+        unet_params: dict[str, Any] | None = None,
     ) -> None:
         super().__init__()
         self.vqvae = vqvae
@@ -32,13 +34,35 @@ class BaseSDFusionSystem(nn.Module):
         self.latent_channels = int(latent_channels)
         self.latent_size = int(latent_size)
         self.conditioning_key = conditioning_key
-        self.denoiser = UNet3D(
-            in_channels=latent_channels,
-            base_channels=unet_base_channels,
-            conditioning_key=conditioning_key,
-            concat_channels=concat_channels,
-            context_dim=context_dim,
-        )
+        self.unet_architecture = unet_architecture
+        if unet_architecture == "legacy_openai":
+            params = {
+                "image_size": latent_size,
+                "in_channels": latent_channels + (concat_channels if conditioning_key in {"concat", "hybrid"} else 0),
+                "out_channels": latent_channels,
+                "model_channels": unet_base_channels,
+                "num_res_blocks": 2,
+                "attention_resolutions": [1, 2, 4],
+                "dropout": 0.0,
+                "channel_mult": [1, 2, 4, 4],
+                "conv_resample": True,
+                "dims": 3,
+                "num_heads": 6,
+                "num_head_channels": -1,
+            }
+            if unet_params:
+                params.update(unet_params)
+            self.denoiser = DiffusionUNet(params, conditioning_key=conditioning_key)
+        elif unet_architecture == "compact":
+            self.denoiser = UNet3D(
+                in_channels=latent_channels,
+                base_channels=unet_base_channels,
+                conditioning_key=conditioning_key,
+                concat_channels=concat_channels,
+                context_dim=context_dim,
+            )
+        else:
+            raise ValueError(f"Unknown unet_architecture '{unet_architecture}'. Use 'legacy_openai' or 'compact'.")
         self.diffusion = GaussianDiffusion(
             self.denoiser,
             timesteps=timesteps,
@@ -51,7 +75,9 @@ class BaseSDFusionSystem(nn.Module):
 
     def encode_sdf_to_latent(self, sdf: torch.Tensor) -> torch.Tensor:
         self.vqvae.eval()
-        return self.vqvae.encode(sdf) * self.scale_factor
+        z = self.vqvae.encode(sdf)
+        z_q, _, _ = self.vqvae.quantize_latent(z)
+        return z_q * self.scale_factor
 
     def decode_latent_to_sdf(self, latent: torch.Tensor) -> torch.Tensor:
         self.vqvae.eval()
@@ -80,7 +106,19 @@ class BaseSDFusionSystem(nn.Module):
         cond: object = None,
         guidance_scale: float = 1.0,
         unconditional_cond: object = None,
-    ) -> torch.Tensor:
+        x_T: torch.Tensor | None = None,
+        x0: torch.Tensor | None = None,
+        mask: torch.Tensor | None = None,
+        clip_denoised: bool = False,
+        temperature: float = 1.0,
+        noise_dropout: float = 0.0,
+        ddim_discretize: str = "uniform",
+        return_intermediates: bool = False,
+        log_every_t: int = 100,
+        callback=None,
+        img_callback=None,
+        progress: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, list[torch.Tensor]]]:
         device = next(self.parameters()).device
         shape = (num_samples, self.latent_channels, self.latent_size, self.latent_size, self.latent_size)
         if sampler == "ddpm":
@@ -90,6 +128,18 @@ class BaseSDFusionSystem(nn.Module):
                 cond=cond,
                 guidance_scale=guidance_scale,
                 unconditional_cond=unconditional_cond,
+                steps=steps,
+                x_T=x_T,
+                x0=x0,
+                mask=mask,
+                clip_denoised=clip_denoised,
+                temperature=temperature,
+                noise_dropout=noise_dropout,
+                return_intermediates=return_intermediates,
+                log_every_t=log_every_t,
+                callback=callback,
+                img_callback=img_callback,
+                progress=progress,
             )
         elif sampler == "ddim":
             latent = DDIMSampler(self.diffusion).sample(
@@ -100,6 +150,18 @@ class BaseSDFusionSystem(nn.Module):
                 guidance_scale=guidance_scale,
                 unconditional_cond=unconditional_cond,
                 device=device,
+                ddim_discretize=ddim_discretize,
+                x_T=x_T,
+                x0=x0,
+                mask=mask,
+                clip_denoised=clip_denoised,
+                temperature=temperature,
+                noise_dropout=noise_dropout,
+                return_intermediates=return_intermediates,
+                log_every_t=log_every_t,
+                callback=callback,
+                img_callback=img_callback,
+                progress=progress,
             )
         elif sampler == "plms":
             latent = PLMSSampler(self.diffusion).sample(
@@ -110,9 +172,22 @@ class BaseSDFusionSystem(nn.Module):
                 guidance_scale=guidance_scale,
                 unconditional_cond=unconditional_cond,
                 device=device,
+                ddim_discretize=ddim_discretize,
+                x_T=x_T,
+                x0=x0,
+                mask=mask,
+                clip_denoised=clip_denoised,
+                return_intermediates=return_intermediates,
+                log_every_t=log_every_t,
+                callback=callback,
+                img_callback=img_callback,
+                progress=progress,
             )
         else:
             raise ValueError(f"Unknown sampler '{sampler}'. Use 'ddim', 'ddpm', or 'plms'.")
+        if return_intermediates:
+            latent_tensor, intermediates = latent
+            return self.decode_latent_to_sdf(latent_tensor), intermediates
         return self.decode_latent_to_sdf(latent)
 
     def save_checkpoint(self, path: str | Path, **extra: Any) -> None:

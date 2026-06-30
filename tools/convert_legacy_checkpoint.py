@@ -6,6 +6,7 @@ from pathlib import Path
 
 import torch
 
+from _common import ROOT  # noqa: F401
 from engine.checkpoint import (
     convert_legacy_diffusion_state,
     convert_legacy_vqvae_state,
@@ -25,7 +26,7 @@ def main() -> None:
     payload = load_checkpoint(args.input, map_location="cpu")
     preferred = ("vqvae", "df", "model", "state_dict") if args.component == "vqvae" else ("df", "model", "state_dict")
     state = extract_state_dict(payload, preferred_keys=preferred)
-    converted = convert_legacy_vqvae_state(state) if args.component == "vqvae" else convert_legacy_diffusion_state(state, target_prefix="")
+    converted = convert_legacy_vqvae_state(state) if args.component == "vqvae" else convert_legacy_diffusion_state(state, target_prefix=None)
     metadata = {
         "source": str(Path(args.input).resolve()),
         "component": args.component,

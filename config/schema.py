@@ -33,6 +33,13 @@ class VQVAEConfig:
     embed_dim: int = 3
     n_embed: int = 8192
     codebook_weight: float = 1.0
+    occupancy_weight: float = 0.0
+    surface_weight: float = 0.0
+    normal_weight: float = 0.0
+    multiscale_weight: float = 0.0
+    surface_band: float = 0.02
+    occupancy_temperature: float = 0.02
+    multiscale_levels: int = 1
     ddconfig: dict[str, Any] = field(default_factory=dict)
     legacy_quantizer_loss: bool = False
 
@@ -46,7 +53,9 @@ class DiffusionConfig:
     scale_factor: float = 1.0
     latent_channels: int = 3
     latent_size: int = 16
-    unet_base_channels: int = 128
+    unet_base_channels: int = 192
+    unet_architecture: Literal["legacy_openai", "compact"] = "legacy_openai"
+    unet_params: dict[str, Any] = field(default_factory=dict)
     concat_channels: int = 0
     context_dim: int = 0
     guidance_scale: float = 1.0
@@ -62,6 +71,12 @@ class TrainConfig:
     max_steps: int = 10000
     log_every: int = 50
     save_every: int = 1000
+    eval_every: int = 1000
+    eval_batches: int = 8
+    sample_every: int = 1000
+    sample_num: int = 4
+    sample_steps: int = 100
+    sample_sampler: Literal["ddim", "ddpm", "plms"] = "ddim"
     device: str = "cuda"
 
 

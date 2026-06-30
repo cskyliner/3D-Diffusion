@@ -58,15 +58,30 @@ def convert_legacy_vqvae_state(state_dict: dict[str, torch.Tensor]) -> dict[str,
     return output
 
 
-def convert_legacy_diffusion_state(state_dict: dict[str, torch.Tensor], target_prefix: str = "denoiser.") -> dict[str, torch.Tensor]:
+def convert_legacy_diffusion_state(state_dict: dict[str, torch.Tensor], target_prefix: str | None = None) -> dict[str, torch.Tensor]:
     converted = strip_known_prefixes(state_dict)
     output: dict[str, torch.Tensor] = {}
     for key, value in converted.items():
-        if key.startswith("diffusion_net."):
-            output[target_prefix + key[len("diffusion_net.") :]] = value
+        if key.startswith("diffusion_net.") and target_prefix is not None:
+            output[target_prefix + key] = value
         else:
             output[key] = value
     return output
+
+
+def adapt_state_dict_to_model(model: nn.Module, state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+    model_keys = set(model.state_dict().keys())
+    if state_dict and all(key.startswith("diffusion_net.") for key in state_dict) and any(
+        key.startswith("denoiser.diffusion_net.") for key in model_keys
+    ):
+        return {f"denoiser.{key}": value for key, value in state_dict.items()}
+    if state_dict and all(not key.startswith("denoiser.") for key in state_dict) and any(
+        key.startswith("denoiser.diffusion_net.") for key in model_keys
+    ):
+        diffusion_keys = {f"denoiser.diffusion_net.{key}": value for key, value in state_dict.items()}
+        if any(key in model_keys for key in diffusion_keys):
+            return diffusion_keys
+    return state_dict
 
 
 def load_model_checkpoint(
@@ -83,9 +98,10 @@ def load_model_checkpoint(
     if component == "vqvae":
         state_dict = convert_legacy_vqvae_state(state_dict)
     elif component in {"df", "denoiser", "diffusion"}:
-        state_dict = convert_legacy_diffusion_state(state_dict, target_prefix="")
+        state_dict = convert_legacy_diffusion_state(state_dict, target_prefix=None)
     else:
         state_dict = strip_known_prefixes(state_dict)
+    state_dict = adapt_state_dict_to_model(model, state_dict)
     incompatible = model.load_state_dict(state_dict, strict=strict)
     return {
         "payload": payload if isinstance(payload, dict) else {},

@@ -13,7 +13,11 @@ def make_beta_schedule(
     cosine_s: float = 8.0e-3,
 ) -> np.ndarray:
     if schedule == "linear":
+        return np.linspace(linear_start**0.5, linear_end**0.5, timesteps, dtype=np.float64) ** 2
+    if schedule == "sqrt_linear":
         return np.linspace(linear_start, linear_end, timesteps, dtype=np.float64)
+    if schedule == "sqrt":
+        return np.linspace(linear_start, linear_end, timesteps, dtype=np.float64) ** 0.5
     if schedule == "cosine":
         steps = timesteps + 1
         x = np.linspace(0, timesteps, steps, dtype=np.float64)

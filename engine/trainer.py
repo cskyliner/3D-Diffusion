@@ -5,6 +5,7 @@ from itertools import cycle
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
@@ -14,6 +15,7 @@ from models.systems.uncond_system import UncondSDFusionSystem
 from models.vqvae import SDFVQVAE
 from modules.vqvae.losses import occupancy_iou, vqvae_loss
 from utils.mesh import sdf_to_mesh
+from utils.metrics import diversity_l1, sdf_stats
 from utils.sdf_io import save_sdf_npy
 from utils.seed import seed_everything
 
@@ -65,7 +67,23 @@ def build_uncond_system(config: dict[str, Any], vqvae: SDFVQVAE) -> UncondSDFusi
         conditioning_key=config.get("conditioning_key"),
         concat_channels=int(diffusion_cfg.get("concat_channels", 0)),
         context_dim=int(diffusion_cfg.get("context_dim", 0)),
+        unet_architecture=str(diffusion_cfg.get("unet_architecture", "legacy_openai")),
+        unet_params=dict(diffusion_cfg.get("unet_params", {})),
     )
+
+
+def vqvae_loss_kwargs(config: dict[str, Any]) -> dict[str, Any]:
+    vq_cfg = config.get("vqvae", {})
+    return {
+        "codebook_weight": float(vq_cfg.get("codebook_weight", 1.0)),
+        "occupancy_weight": float(vq_cfg.get("occupancy_weight", 0.0)),
+        "surface_weight": float(vq_cfg.get("surface_weight", 0.0)),
+        "normal_weight": float(vq_cfg.get("normal_weight", 0.0)),
+        "multiscale_weight": float(vq_cfg.get("multiscale_weight", 0.0)),
+        "surface_band": float(vq_cfg.get("surface_band", 0.02)),
+        "occupancy_temperature": float(vq_cfg.get("occupancy_temperature", 0.02)),
+        "multiscale_levels": int(vq_cfg.get("multiscale_levels", 1)),
+    }
 
 
 class JsonlLogger:
@@ -104,21 +122,98 @@ def export_vqvae_reconstructions(
 
 
 @torch.no_grad()
-def evaluate_vqvae(model: SDFVQVAE, loader: DataLoader, device: torch.device, max_batches: int | None = None) -> dict[str, float]:
+def evaluate_vqvae(
+    model: SDFVQVAE,
+    loader: DataLoader,
+    device: torch.device,
+    max_batches: int | None = None,
+    loss_kwargs: dict[str, Any] | None = None,
+) -> dict[str, float]:
     model.eval()
     losses: list[float] = []
     ious: list[torch.Tensor] = []
+    loss_sums: dict[str, float] = {}
     for batch_index, batch in enumerate(loader):
         if max_batches is not None and batch_index >= max_batches:
             break
         batch = move_to_device(batch, device)
         output = model(batch["sdf"])
-        loss, _ = vqvae_loss(batch["sdf"], output["reconstruction"], output["codebook_loss"])
+        loss, loss_dict = vqvae_loss(batch["sdf"], output["reconstruction"], output["codebook_loss"], **(loss_kwargs or {}))
         losses.append(float(loss.detach().cpu()))
+        for key, value in loss_dict.items():
+            loss_sums[key] = loss_sums.get(key, 0.0) + float(value.detach().cpu())
         ious.append(occupancy_iou(output["reconstruction"], batch["sdf"]).detach().cpu())
     if not losses:
         return {"loss_total": 0.0, "iou": 0.0}
-    return {"loss_total": float(sum(losses) / len(losses)), "iou": float(torch.cat(ious).mean())}
+    metrics = {key: value / len(losses) for key, value in loss_sums.items()}
+    metrics["loss_total"] = float(sum(losses) / len(losses))
+    metrics["iou"] = float(torch.cat(ious).mean())
+    return metrics
+
+
+@torch.no_grad()
+def evaluate_diffusion_loss(system: UncondSDFusionSystem, loader: DataLoader, device: torch.device, max_batches: int | None = None) -> dict[str, float]:
+    system.eval()
+    totals: dict[str, float] = {}
+    count = 0
+    for batch_index, batch in enumerate(loader):
+        if max_batches is not None and batch_index >= max_batches:
+            break
+        batch = move_to_device(batch, device)
+        _, loss_dict = system(batch)
+        for key, value in loss_dict.items():
+            totals[key] = totals.get(key, 0.0) + float(value.detach().cpu())
+        count += 1
+    if count == 0:
+        return {"loss_total": 0.0}
+    return {key: value / count for key, value in totals.items()}
+
+
+@torch.no_grad()
+def export_diffusion_snapshot(
+    system: UncondSDFusionSystem,
+    out_dir: str | Path,
+    num_samples: int = 4,
+    steps: int = 100,
+    sampler: str = "ddim",
+) -> dict[str, Any]:
+    output = Path(out_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    system.eval()
+    sdf_batch = system.sample(num_samples=num_samples, sampler=sampler, steps=steps)
+    sdfs: list[np.ndarray] = []
+    records: list[dict[str, Any]] = []
+    mesh_success = 0
+    for index, sdf in enumerate(sdf_batch):
+        sdf_np = sdf.detach().cpu().numpy().astype(np.float32)
+        sdfs.append(sdf_np)
+        stem = f"sample_{index:04d}"
+        sdf_path = save_sdf_npy(sdf_np, output / f"{stem}.sdf.npy")
+        mesh_meta = sdf_to_mesh(sdf_np, output / f"{stem}.ply")
+        mesh_success += int(bool(mesh_meta.get("success", False)))
+        metadata = {
+            "sample": index,
+            "sdf_path": str(sdf_path),
+            "mesh": mesh_meta,
+            "stats": sdf_stats(sdf_np),
+        }
+        (output / f"{stem}.metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        records.append(metadata)
+    success_rate = float(mesh_success / len(records)) if records else 0.0
+    aggregate_stats = sdf_stats(np.stack(sdfs)) if sdfs else {"min": 0.0, "max": 0.0, "mean": 0.0, "occupancy_ratio": 0.0}
+    report = {
+        "num_samples": len(records),
+        "sampler": sampler,
+        "steps": steps,
+        "mesh_success": mesh_success,
+        "mesh_failed": len(records) - mesh_success,
+        "mesh_success_rate": success_rate,
+        "sdf_stats": aggregate_stats,
+        "diversity_l1": diversity_l1(sdfs),
+        "samples": records,
+    }
+    (output / "snapshot_evaluation.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    return report
 
 
 def train_vqvae(config: dict[str, Any], out_dir: str | Path, resume: str | None = None) -> Path:
@@ -140,7 +235,7 @@ def train_vqvae(config: dict[str, Any], out_dir: str | Path, resume: str | None 
     max_steps = int(train_cfg.get("max_steps", 10000))
     log_every = int(train_cfg.get("log_every", 50))
     save_every = int(train_cfg.get("save_every", 1000))
-    codebook_weight = float(config.get("vqvae", {}).get("codebook_weight", 1.0))
+    loss_kwargs = vqvae_loss_kwargs(config)
 
     last_ckpt = output / "checkpoints" / "vqvae_last.pt"
     for step, batch in zip(range(1, max_steps + 1), cycle(loader)):
@@ -151,7 +246,7 @@ def train_vqvae(config: dict[str, Any], out_dir: str | Path, resume: str | None 
             batch["sdf"],
             output_dict["reconstruction"],
             output_dict["codebook_loss"],
-            codebook_weight=codebook_weight,
+            **loss_kwargs,
         )
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
@@ -161,7 +256,13 @@ def train_vqvae(config: dict[str, Any], out_dir: str | Path, resume: str | None 
             logger.write(row)
             print(row)
         if step % save_every == 0 or step == max_steps:
-            metrics = evaluate_vqvae(model, val_loader, device, max_batches=int(train_cfg.get("eval_batches", 8)))
+            metrics = evaluate_vqvae(
+                model,
+                val_loader,
+                device,
+                max_batches=int(train_cfg.get("eval_batches", 8)),
+                loss_kwargs=loss_kwargs,
+            )
             save_checkpoint(last_ckpt, vqvae=model.state_dict(), optimizer=optimizer.state_dict(), step=step, metrics=metrics)
             logger.write({"step": step, "split": "test", **metrics})
             first_batch = move_to_device(next(iter(val_loader)), device)
@@ -169,7 +270,7 @@ def train_vqvae(config: dict[str, Any], out_dir: str | Path, resume: str | None 
     return last_ckpt
 
 
-def train_diffusion(config: dict[str, Any], out_dir: str | Path, vqvae_ckpt: str | None = None, resume: str | None = None) -> Path:
+def train_diffusion(config: dict[str, Any], out_dir: str | Path, vqvae_ckpt: str, resume: str | None = None) -> Path:
     train_cfg = config.get("train", {})
     seed_everything(int(train_cfg.get("seed", 0)))
     device = resolve_device(str(train_cfg.get("device", "cuda")))
@@ -177,9 +278,14 @@ def train_diffusion(config: dict[str, Any], out_dir: str | Path, vqvae_ckpt: str
     output.mkdir(parents=True, exist_ok=True)
     logger = JsonlLogger(output / "metrics.jsonl")
     loader = build_dataloader(config, split=config.get("data", {}).get("split", "train"), shuffle=True)
+    try:
+        val_loader = build_dataloader(config, split="test", shuffle=False)
+    except FileNotFoundError:
+        val_loader = build_dataloader(config, split=config.get("data", {}).get("split", "train"), shuffle=False)
     vqvae = build_vqvae(config)
-    if vqvae_ckpt:
-        load_model_checkpoint(vqvae, vqvae_ckpt, component="vqvae", strict=False)
+    if not vqvae_ckpt:
+        raise ValueError("train_diffusion requires a trained VQ-VAE checkpoint.")
+    load_model_checkpoint(vqvae, vqvae_ckpt, component="vqvae", strict=False)
     system = build_uncond_system(config, vqvae).to(device)
     if resume:
         load_model_checkpoint(system, resume, component="model", strict=False)
@@ -187,6 +293,12 @@ def train_diffusion(config: dict[str, Any], out_dir: str | Path, vqvae_ckpt: str
     max_steps = int(train_cfg.get("max_steps", 10000))
     log_every = int(train_cfg.get("log_every", 50))
     save_every = int(train_cfg.get("save_every", 1000))
+    eval_every = int(train_cfg.get("eval_every", save_every))
+    sample_every = int(train_cfg.get("sample_every", save_every))
+    eval_batches = int(train_cfg.get("eval_batches", 8))
+    sample_num = int(train_cfg.get("sample_num", 4))
+    sample_steps = int(train_cfg.get("sample_steps", 100))
+    sample_sampler = str(train_cfg.get("sample_sampler", "ddim"))
     last_ckpt = output / "checkpoints" / "diffusion_last.pt"
 
     for step, batch in zip(range(1, max_steps + 1), cycle(loader)):
@@ -200,6 +312,34 @@ def train_diffusion(config: dict[str, Any], out_dir: str | Path, vqvae_ckpt: str
             row = {"step": step, **{key: float(value.cpu()) for key, value in loss_dict.items()}}
             logger.write(row)
             print(row)
+        if eval_every > 0 and (step % eval_every == 0 or step == max_steps):
+            metrics = evaluate_diffusion_loss(system, val_loader, device, max_batches=eval_batches)
+            row = {"step": step, "split": "test", **metrics}
+            logger.write(row)
+            print(row)
+        if sample_every > 0 and (step % sample_every == 0 or step == max_steps):
+            snapshot_dir = output / "samples" / f"step_{step:07d}"
+            sample_report = export_diffusion_snapshot(
+                system,
+                snapshot_dir,
+                num_samples=sample_num,
+                steps=sample_steps,
+                sampler=sample_sampler,
+            )
+            logger.write(
+                {
+                    "step": step,
+                    "split": "sample",
+                    "sample_dir": str(snapshot_dir),
+                    "mesh_success_rate": sample_report["mesh_success_rate"],
+                    "diversity_l1": sample_report["diversity_l1"],
+                    "sdf_min": sample_report["sdf_stats"]["min"],
+                    "sdf_max": sample_report["sdf_stats"]["max"],
+                    "sdf_mean": sample_report["sdf_stats"]["mean"],
+                    "occupancy_ratio": sample_report["sdf_stats"]["occupancy_ratio"],
+                }
+            )
+            system.train()
         if step % save_every == 0 or step == max_steps:
             save_checkpoint(last_ckpt, model=system.state_dict(), optimizer=optimizer.state_dict(), step=step)
     return last_ckpt
