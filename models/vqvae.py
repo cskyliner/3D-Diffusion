@@ -5,8 +5,40 @@ from typing import Any
 
 import torch
 from torch import nn
+from torch.nn import init
 
 from modules.vqvae import Decoder3D, Encoder3D, LegacyDecoder3D, LegacyEncoder3D, VectorQuantizer
+
+
+def init_vqvae_weights(module: nn.Module, init_type: str = "normal", gain: float = 0.02) -> None:
+    """Initialize VQ-VAE conv/linear layers following the original SDFusion setup."""
+
+    def init_func(layer: nn.Module) -> None:
+        classname = layer.__class__.__name__
+        if isinstance(layer, (nn.Conv3d, nn.ConvTranspose3d, nn.Linear)):
+            if init_type == "normal":
+                init.normal_(layer.weight.data, 0.0, gain)
+            elif init_type == "xavier":
+                init.xavier_normal_(layer.weight.data, gain=gain)
+            elif init_type == "xavier_uniform":
+                init.xavier_uniform_(layer.weight.data, gain=1.0)
+            elif init_type == "kaiming":
+                init.kaiming_normal_(layer.weight.data, a=0, mode="fan_in")
+            elif init_type == "orthogonal":
+                init.orthogonal_(layer.weight.data, gain=gain)
+            elif init_type == "none":
+                layer.reset_parameters()
+            else:
+                raise ValueError(f"Unsupported VQ-VAE init_type: {init_type}")
+            if layer.bias is not None:
+                init.constant_(layer.bias.data, 0.0)
+        elif isinstance(layer, (nn.BatchNorm3d, nn.GroupNorm)):
+            if layer.weight is not None:
+                init.constant_(layer.weight.data, 1.0)
+            if layer.bias is not None:
+                init.constant_(layer.bias.data, 0.0)
+
+    module.apply(init_func)
 
 
 class SDFVQVAE(nn.Module):
@@ -25,6 +57,8 @@ class SDFVQVAE(nn.Module):
         architecture: str = "simple",
         ddconfig: dict[str, Any] | None = None,
         legacy_quantizer_loss: bool = False,
+        init_type: str = "normal",
+        init_gain: float = 0.02,
     ) -> None:
         super().__init__()
         self.architecture = architecture
@@ -57,6 +91,10 @@ class SDFVQVAE(nn.Module):
         self.post_quant_conv = nn.Conv3d(embed_dim, z_channels, kernel_size=1)
         self.quantize = VectorQuantizer(n_embed=n_embed, embed_dim=embed_dim, beta=1.0, legacy=legacy_quantizer_loss)
         self.embed_dim = embed_dim
+        init_vqvae_weights(self.encoder, init_type=init_type, gain=float(init_gain))
+        init_vqvae_weights(self.decoder, init_type=init_type, gain=float(init_gain))
+        init_vqvae_weights(self.quant_conv, init_type=init_type, gain=float(init_gain))
+        init_vqvae_weights(self.post_quant_conv, init_type=init_type, gain=float(init_gain))
 
     @property
     def quantizer(self) -> VectorQuantizer:

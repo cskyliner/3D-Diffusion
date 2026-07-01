@@ -34,18 +34,20 @@ class VQVAEConfig:
     n_embed: int = 8192
     ddconfig: dict[str, Any] = field(default_factory=dict)
     legacy_quantizer_loss: bool = False
+    init_type: str = "normal"
+    init_gain: float = 0.02
 
 
 @dataclass
 class VQVAELossConfig:
     codebook_weight: float = 1.0
-    occupancy_weight: float = 0.0
-    surface_weight: float = 0.0
-    normal_weight: float = 0.0
-    multiscale_weight: float = 0.0
+    occupancy_weight: float = 0.05
+    surface_weight: float = 0.1
+    normal_weight: float = 0.05
+    multiscale_weight: float = 0.1
     surface_band: float = 0.02
     occupancy_temperature: float = 0.02
-    multiscale_levels: int = 1
+    multiscale_levels: int = 3
 
 
 @dataclass
@@ -81,6 +83,7 @@ class TrainConfig:
     sample_num: int = 4
     sample_steps: int = 100
     sample_sampler: Literal["ddim", "ddpm", "plms"] = "ddim"
+    grad_clip_norm: float = 1.0
     device: str = "cuda"
 
 

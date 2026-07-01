@@ -1,3 +1,30 @@
+Metadata-Version: 2.4
+Name: sdfusion-refactored
+Version: 0.1.0
+Summary: A refactored SDFusion-style project for 3D diffusion modeling.
+Author: Diffusion
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Science/Research
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: einops>=0.7
+Requires-Dist: h5py>=3.10
+Requires-Dist: numpy>=1.24
+Requires-Dist: PyYAML>=6.0
+Requires-Dist: scikit-image>=0.21
+Requires-Dist: torch>=2.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: ruff>=0.6; extra == "dev"
+Provides-Extra: preprocess
+Requires-Dist: rtree>=1.2; extra == "preprocess"
+Requires-Dist: trimesh>=4.0; extra == "preprocess"
+
 # 3D-Diffusion
 
 Refactored course-project implementation of an SDFusion-style 3D generative pipeline. The code in this folder is the submitted implementation; `../SDFusion-master` is treated as a read-only reference and is not modified.

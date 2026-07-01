@@ -92,6 +92,22 @@ def vqvae_loss_kwargs(config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def codebook_metrics(indices: torch.Tensor, n_embed: int) -> dict[str, torch.Tensor]:
+    """Return batch-level codebook utilization metrics for VQ-VAE diagnostics."""
+    flat = indices.reshape(-1).to(torch.long)
+    counts = torch.bincount(flat, minlength=int(n_embed)).float()
+    total = counts.sum().clamp_min(1.0)
+    probs = counts / total
+    nonzero = probs > 0
+    entropy = -(probs[nonzero] * torch.log(probs[nonzero])).sum()
+    used = (counts > 0).float().sum()
+    return {
+        "codebook_used": used.detach(),
+        "codebook_usage": (used / float(n_embed)).detach(),
+        "codebook_perplexity": torch.exp(entropy).detach(),
+    }
+
+
 class JsonlLogger:
     """Append one JSON metrics row per line for long-running training jobs."""
 
@@ -151,6 +167,8 @@ def evaluate_vqvae(
         loss, loss_dict = vqvae_loss(batch["sdf"], output["reconstruction"], output["codebook_loss"], **(loss_kwargs or {}))
         losses.append(float(loss.detach().cpu()))
         for key, value in loss_dict.items():
+            loss_sums[key] = loss_sums.get(key, 0.0) + float(value.detach().cpu())
+        for key, value in codebook_metrics(output["indices"], model.quantize.n_embed).items():
             loss_sums[key] = loss_sums.get(key, 0.0) + float(value.detach().cpu())
         ious.append(occupancy_iou(output["reconstruction"], batch["sdf"]).detach().cpu())
     if not losses:
@@ -248,6 +266,7 @@ def train_vqvae(config: dict[str, Any], out_dir: str | Path, resume: str | None 
     max_steps = int(train_cfg.get("max_steps", 10000))
     log_every = int(train_cfg.get("log_every", 50))
     save_every = int(train_cfg.get("save_every", 1000))
+    grad_clip_norm = float(train_cfg.get("grad_clip_norm", 1.0))
     loss_kwargs = vqvae_loss_kwargs(config)
 
     last_ckpt = output / "checkpoints" / "vqvae_last.pt"
@@ -263,9 +282,18 @@ def train_vqvae(config: dict[str, Any], out_dir: str | Path, resume: str | None 
         )
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
+        grad_norm = None
+        if grad_clip_norm > 0.0:
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
         optimizer.step()
         if step % log_every == 0 or step == 1:
-            row = {"step": step, **{key: float(value.cpu()) for key, value in loss_dict.items()}}
+            row = {
+                "step": step,
+                **{key: float(value.cpu()) for key, value in loss_dict.items()},
+                **{key: float(value.cpu()) for key, value in codebook_metrics(output_dict["indices"], model.quantize.n_embed).items()},
+            }
+            if grad_norm is not None:
+                row["grad_norm"] = float(grad_norm.detach().cpu())
             logger.write(row)
             print(row)
         if step % save_every == 0 or step == max_steps:

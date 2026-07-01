@@ -25,6 +25,8 @@ vqvae:
   embed_dim: 3
   n_embed: 8192
   legacy_quantizer_loss: false
+  init_type: normal
+  init_gain: 0.02
   ddconfig:
     ch: 64
     out_ch: 1
@@ -40,13 +42,13 @@ vqvae:
     activ: gelu
 vqvae_loss:
   codebook_weight: 1.0
-  occupancy_weight: 0.0
-  surface_weight: 0.0
-  normal_weight: 0.0
-  multiscale_weight: 0.0
+  occupancy_weight: 0.05
+  surface_weight: 0.1
+  normal_weight: 0.05
+  multiscale_weight: 0.1
   surface_band: 0.02
   occupancy_temperature: 0.02
-  multiscale_levels: 1
+  multiscale_levels: 3
 train:
   seed: 0
   batch_size: 4
@@ -61,4 +63,5 @@ train:
   sample_num: 4
   sample_steps: 100
   sample_sampler: ddim
+  grad_clip_norm: 1.0
   device: cuda
