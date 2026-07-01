@@ -21,7 +21,7 @@ python tools/evaluate_vqvae.py --config config/defaults/vqvae_snet_chair.yaml --
 
 The loader strips common wrappers such as `module.` and understands checkpoints with `vqvae`, `model`, or raw state dict roots.
 
-The default VQ-VAE loss remains the original lightweight SDF target, L1 reconstruction plus vector-quantization loss. Optional geometry terms are available through config: occupancy BCE, surface-weighted L1, normal alignment, and multiscale L1.
+The default VQ-VAE loss remains the original lightweight SDF target, L1 reconstruction plus vector-quantization loss. Optional geometry terms are configured under `vqvae_loss`: occupancy BCE, surface-weighted L1, normal alignment, and multiscale L1.
 
 ## Diffusion
 

@@ -22,13 +22,11 @@ class SDFVQVAE(nn.Module):
         z_channels: int = 256,
         embed_dim: int = 256,
         n_embed: int = 1024,
-        codebook_weight: float | None = None,
         architecture: str = "simple",
         ddconfig: dict[str, Any] | None = None,
         legacy_quantizer_loss: bool = False,
     ) -> None:
         super().__init__()
-        del codebook_weight
         self.architecture = architecture
         if architecture == "legacy":
             legacy_config = {

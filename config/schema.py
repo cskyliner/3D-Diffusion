@@ -32,6 +32,12 @@ class VQVAEConfig:
     z_channels: int = 3
     embed_dim: int = 3
     n_embed: int = 8192
+    ddconfig: dict[str, Any] = field(default_factory=dict)
+    legacy_quantizer_loss: bool = False
+
+
+@dataclass
+class VQVAELossConfig:
     codebook_weight: float = 1.0
     occupancy_weight: float = 0.0
     surface_weight: float = 0.0
@@ -40,8 +46,6 @@ class VQVAEConfig:
     surface_band: float = 0.02
     occupancy_temperature: float = 0.02
     multiscale_levels: int = 1
-    ddconfig: dict[str, Any] = field(default_factory=dict)
-    legacy_quantizer_loss: bool = False
 
 
 @dataclass
@@ -90,6 +94,7 @@ class SDFusionConfig:
     conditioner: ConditionerName = None
     data: DataConfig = field(default_factory=DataConfig)
     vqvae: VQVAEConfig = field(default_factory=VQVAEConfig)
+    vqvae_loss: VQVAELossConfig = field(default_factory=VQVAELossConfig)
     diffusion: DiffusionConfig = field(default_factory=DiffusionConfig)
     train: TrainConfig = field(default_factory=TrainConfig)
     extra: dict[str, Any] = field(default_factory=dict)

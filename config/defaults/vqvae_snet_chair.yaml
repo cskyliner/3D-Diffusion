@@ -24,14 +24,6 @@ vqvae:
   z_channels: 3
   embed_dim: 3
   n_embed: 8192
-  codebook_weight: 1.0
-  occupancy_weight: 0.0
-  surface_weight: 0.0
-  normal_weight: 0.0
-  multiscale_weight: 0.0
-  surface_band: 0.02
-  occupancy_temperature: 0.02
-  multiscale_levels: 1
   legacy_quantizer_loss: false
   ddconfig:
     ch: 64
@@ -46,6 +38,15 @@ vqvae:
     z_channels: 3
     double_z: false
     activ: gelu
+vqvae_loss:
+  codebook_weight: 1.0
+  occupancy_weight: 0.0
+  surface_weight: 0.0
+  normal_weight: 0.0
+  multiscale_weight: 0.0
+  surface_band: 0.02
+  occupancy_temperature: 0.02
+  multiscale_levels: 1
 train:
   seed: 0
   batch_size: 4

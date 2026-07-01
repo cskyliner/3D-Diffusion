@@ -79,16 +79,16 @@ def build_uncond_system(config: dict[str, Any], vqvae: SDFVQVAE) -> UncondSDFusi
 
 def vqvae_loss_kwargs(config: dict[str, Any]) -> dict[str, Any]:
     """Extract optional VQ-VAE geometry loss weights from config."""
-    vq_cfg = config.get("vqvae", {})
+    loss_cfg = config.get("vqvae_loss", {})
     return {
-        "codebook_weight": float(vq_cfg.get("codebook_weight", 1.0)),
-        "occupancy_weight": float(vq_cfg.get("occupancy_weight", 0.0)),
-        "surface_weight": float(vq_cfg.get("surface_weight", 0.0)),
-        "normal_weight": float(vq_cfg.get("normal_weight", 0.0)),
-        "multiscale_weight": float(vq_cfg.get("multiscale_weight", 0.0)),
-        "surface_band": float(vq_cfg.get("surface_band", 0.02)),
-        "occupancy_temperature": float(vq_cfg.get("occupancy_temperature", 0.02)),
-        "multiscale_levels": int(vq_cfg.get("multiscale_levels", 1)),
+        "codebook_weight": float(loss_cfg.get("codebook_weight", 1.0)),
+        "occupancy_weight": float(loss_cfg.get("occupancy_weight", 0.0)),
+        "surface_weight": float(loss_cfg.get("surface_weight", 0.0)),
+        "normal_weight": float(loss_cfg.get("normal_weight", 0.0)),
+        "multiscale_weight": float(loss_cfg.get("multiscale_weight", 0.0)),
+        "surface_band": float(loss_cfg.get("surface_band", 0.02)),
+        "occupancy_temperature": float(loss_cfg.get("occupancy_temperature", 0.02)),
+        "multiscale_levels": int(loss_cfg.get("multiscale_levels", 1)),
     }
 
 

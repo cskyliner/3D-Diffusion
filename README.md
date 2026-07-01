@@ -192,17 +192,17 @@ The default VQ-VAE objective matches the original lightweight SDFusion training 
 L = L1(reconstruction, sdf) + codebook_weight * codebook_loss
 ```
 
-Additional SDF losses can be enabled from config or command line:
+Model architecture settings live under `vqvae`; reconstruction/codebook and optional geometry loss weights live under `vqvae_loss`. Additional SDF losses can be enabled from config or command line:
 
 ```bash
 python tools/train_vqvae.py \
   --config config/defaults/vqvae_snet_chair.yaml \
   --out_dir outputs/vqvae_chair_geo \
-  --override vqvae.occupancy_weight=0.1 \
-  --override vqvae.surface_weight=1.0 \
-  --override vqvae.normal_weight=0.1 \
-  --override vqvae.multiscale_weight=0.25 \
-  --override vqvae.multiscale_levels=3
+  --override vqvae_loss.occupancy_weight=0.1 \
+  --override vqvae_loss.surface_weight=1.0 \
+  --override vqvae_loss.normal_weight=0.1 \
+  --override vqvae_loss.multiscale_weight=0.25 \
+  --override vqvae_loss.multiscale_levels=3
 ```
 
 These optional terms are occupancy BCE on SDF sign, near-surface weighted L1, near-surface normal alignment, and multiscale L1.
