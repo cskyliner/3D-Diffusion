@@ -133,7 +133,7 @@ python tools/preprocess_shapenet_obj_to_sdf.py \
 The script has two backends:
 
 - `--backend trimesh`: pure Python fallback using `trimesh.proximity.signed_distance`; easiest to run after installing `.[preprocess]`.
-- `--backend sdfgen`: closer to the original SDFusion preprocessing path; pass `--sdfgen /path/to/SDFGen`.
+- `--backend sdfgen`: closer to the original SDFusion preprocessing path. The repository includes SDFusion's Linux `computeDistanceField` at `external/sdfgen/computeDistanceField`, which the script discovers automatically; pass `--sdfgen /path/to/computeDistanceField` only when using another binary.
 
 If `--write_filelist` is used, the script also writes a file like:
 
@@ -156,10 +156,11 @@ Inspect before training:
 
 ```bash
 python tools/inspect_dataset.py \
-  --data_root data \
+  --data_root /root/autodl-tmp/data \
   --category chair \
   --res 64 \
   --split train \
+  --split_file_root /root/autodl-tmp/data/ShapeNet_filelists \
   --max_samples 2
 ```
 
@@ -169,7 +170,7 @@ python tools/inspect_dataset.py \
 bash scripts/train_vqvae_chair.sh
 ```
 
-Equivalent explicit command:
+Equivalent explicit command for project-local data:
 
 ```bash
 python tools/train_vqvae.py \
@@ -177,6 +178,17 @@ python tools/train_vqvae.py \
   --out_dir outputs/vqvae_chair \
   --override data.data_root=data \
   --override data.category=chair
+```
+
+On AutoDL, use the absolute preprocessed data root and filelist root:
+
+```bash
+python tools/train_vqvae.py \
+  --config config/defaults/vqvae_snet_chair.yaml \
+  --out_dir outputs/vqvae_chair \
+  --override data.data_root=/root/autodl-tmp/data \
+  --override data.category=chair \
+  --override data.split_file_root=/root/autodl-tmp/data/ShapeNet_filelists
 ```
 
 Outputs:

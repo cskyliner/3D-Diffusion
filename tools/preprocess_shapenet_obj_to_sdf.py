@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
@@ -19,6 +21,22 @@ CATEGORY_IDS = {
     "table": "04379243",
     "rifle": "04090263",
 }
+
+ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_SDFGEN = ROOT / "external" / "sdfgen" / "computeDistanceField"
+
+
+def is_bundled_sdfgen_available() -> bool:
+    """Return true when the bundled Linux SDFGen binary can be used on this host."""
+    return sys.platform.startswith("linux") and DEFAULT_SDFGEN.exists() and os.access(DEFAULT_SDFGEN, os.X_OK)
+
+
+def is_bundled_sdfgen(path: Path) -> bool:
+    """Check whether a path resolves to the repository-bundled SDFGen binary."""
+    try:
+        return path.resolve() == DEFAULT_SDFGEN.resolve()
+    except OSError:
+        return False
 
 
 def require_trimesh():
@@ -154,6 +172,15 @@ def compute_sdfgen_sdf(
     keep_intermediate: bool,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Run an external SDFGen binary and convert its output to the training SDF grid."""
+    sdfgen = sdfgen.expanduser()
+    if not sdfgen.is_absolute():
+        sdfgen = (Path.cwd() / sdfgen).resolve()
+    if not sdfgen.exists():
+        raise FileNotFoundError(f"SDFGen binary not found: {sdfgen}")
+    if not os.access(sdfgen, os.X_OK):
+        raise PermissionError(f"SDFGen binary is not executable. Run `chmod +x {sdfgen}`.")
+    if is_bundled_sdfgen(sdfgen) and not sys.platform.startswith("linux"):
+        raise RuntimeError("The bundled SDFGen binary is Linux x86-64 only. Run preprocessing on Linux/AutoDL or use --backend trimesh.")
     work_dir = model_dir / "_preprocess"
     work_dir.mkdir(parents=True, exist_ok=True)
     norm_obj = work_dir / "pc_norm.obj"
@@ -175,7 +202,18 @@ def compute_sdfgen_sdf(
         "1",
         "-c",
     ]
-    subprocess.run(cmd, cwd=work_dir, check=True)
+    env = os.environ.copy()
+    sdfgen_dir = sdfgen.parent
+    ld_paths = [
+        sdfgen_dir,
+        sdfgen_dir / "tbb",
+        sdfgen_dir / "tbb" / "tbb2018_20180822oss" / "lib" / "intel64" / "gcc4.7",
+    ]
+    existing_ld_paths = [str(path) for path in ld_paths if path.exists()]
+    current_ld_path = env.get("LD_LIBRARY_PATH")
+    if existing_ld_paths:
+        env["LD_LIBRARY_PATH"] = ":".join(existing_ld_paths + ([current_ld_path] if current_ld_path else []))
+    subprocess.run(cmd, cwd=work_dir, env=env, check=True)
     grid, params = read_sdfgen_dist(dist_path)
     sdf = downsample_sdf_grid(grid, output_res)
     if not keep_intermediate:
@@ -271,6 +309,8 @@ def process_obj(obj_path: Path, args: argparse.Namespace, cat_id: str, backend: 
 
 def choose_backend(args: argparse.Namespace) -> str:
     """Resolve auto/trimesh/sdfgen backend selection from CLI arguments."""
+    if not args.sdfgen and is_bundled_sdfgen_available():
+        args.sdfgen = str(DEFAULT_SDFGEN)
     if args.backend == "auto":
         return "sdfgen" if args.sdfgen else "trimesh"
     if args.backend == "sdfgen" and not args.sdfgen:
