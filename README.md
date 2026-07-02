@@ -304,6 +304,7 @@ Outputs:
 - `outputs/diffusion_chair/resolved_config.yaml`
 - `outputs/diffusion_chair/metrics.jsonl`
 - `outputs/diffusion_chair/checkpoints/diffusion_last.pt`
+- `outputs/diffusion_chair/checkpoints/diffusion_step_*.pt`
 - `outputs/diffusion_chair/samples/step_*/sample_*.sdf.npy`
 - `outputs/diffusion_chair/samples/step_*/sample_*.ply`
 - `outputs/diffusion_chair/samples/step_*/snapshot_evaluation.json`

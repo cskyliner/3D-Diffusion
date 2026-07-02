@@ -353,7 +353,8 @@ def train_diffusion(config: dict[str, Any], out_dir: str | Path, vqvae_ckpt: str
     sample_steps = int(train_cfg.get("sample_steps", 100))
     sample_sampler = str(train_cfg.get("sample_sampler", "ddim"))
     grad_clip_norm = float(train_cfg.get("grad_clip_norm", 1.0))
-    last_ckpt = output / "checkpoints" / "diffusion_last.pt"
+    checkpoint_dir = output / "checkpoints"
+    last_ckpt = checkpoint_dir / "diffusion_last.pt"
 
     for step, batch in zip(range(1, max_steps + 1), cycle(loader)):
         system.train()
@@ -400,5 +401,15 @@ def train_diffusion(config: dict[str, Any], out_dir: str | Path, vqvae_ckpt: str
             )
             system.train()
         if step % save_every == 0 or step == max_steps:
-            save_checkpoint(last_ckpt, model=system.state_dict(), optimizer=optimizer.state_dict(), step=step)
+            checkpoint_payload = {
+                "model": system.state_dict(),
+                "denoiser": system.denoiser.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "step": step,
+                "vqvae_ckpt": str(vqvae_ckpt),
+                "scale_factor": float(config.get("diffusion", {}).get("scale_factor", 1.0)),
+            }
+            step_ckpt = checkpoint_dir / f"diffusion_step_{step:07d}.pt"
+            save_checkpoint(step_ckpt, **checkpoint_payload)
+            save_checkpoint(last_ckpt, **checkpoint_payload)
     return last_ckpt
