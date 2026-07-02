@@ -341,7 +341,8 @@ def train_diffusion(config: dict[str, Any], out_dir: str | Path, vqvae_ckpt: str
     system = build_uncond_system(config, vqvae).to(device)
     if resume:
         load_model_checkpoint(system, resume, component="model", strict=False)
-    optimizer = torch.optim.AdamW([p for p in system.denoiser.parameters() if p.requires_grad], lr=float(train_cfg.get("lr", 1.0e-4)))
+    denoiser_parameters = [p for p in system.denoiser.parameters() if p.requires_grad]
+    optimizer = torch.optim.AdamW(denoiser_parameters, lr=float(train_cfg.get("lr", 1.0e-4)))
     max_steps = int(train_cfg.get("max_steps", 10000))
     log_every = int(train_cfg.get("log_every", 50))
     save_every = int(train_cfg.get("save_every", 1000))
@@ -351,6 +352,7 @@ def train_diffusion(config: dict[str, Any], out_dir: str | Path, vqvae_ckpt: str
     sample_num = int(train_cfg.get("sample_num", 4))
     sample_steps = int(train_cfg.get("sample_steps", 100))
     sample_sampler = str(train_cfg.get("sample_sampler", "ddim"))
+    grad_clip_norm = float(train_cfg.get("grad_clip_norm", 1.0))
     last_ckpt = output / "checkpoints" / "diffusion_last.pt"
 
     for step, batch in zip(range(1, max_steps + 1), cycle(loader)):
@@ -359,9 +361,14 @@ def train_diffusion(config: dict[str, Any], out_dir: str | Path, vqvae_ckpt: str
         loss, loss_dict = system(batch)
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
+        grad_norm = None
+        if grad_clip_norm > 0.0:
+            grad_norm = torch.nn.utils.clip_grad_norm_(denoiser_parameters, grad_clip_norm)
         optimizer.step()
         if step % log_every == 0 or step == 1:
             row = {"step": step, **{key: float(value.cpu()) for key, value in loss_dict.items()}}
+            if grad_norm is not None:
+                row["grad_norm"] = float(grad_norm.detach().cpu())
             logger.write(row)
             print(row)
         if eval_every > 0 and (step % eval_every == 0 or step == max_steps):
