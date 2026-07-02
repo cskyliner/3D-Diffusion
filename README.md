@@ -7,7 +7,7 @@ Refactored course-project implementation of an SDFusion-style 3D generative pipe
 - ShapeNet SDF dataset loading for single-category training.
 - Legacy-compatible VQ-VAE architecture and checkpoint key layout.
 - VQ-VAE training, evaluation, reconstruction export, mesh export, and optional SDF geometry losses.
-- Quantized latent diffusion training: `SDF -> encoder -> quantizer -> z_q -> diffusion`.
+- SDFusion-style latent diffusion training: `SDF -> encoder -> z -> diffusion`, then quantize generated latents during VQ-VAE decoding.
 - SDFusion/LDM OpenAI-style 3D UNet migration with `diffusion_net.*` legacy checkpoint key compatibility.
 - DDPM loss and DDPM/DDIM/PLMS samplers with clipping, mask/x0 conditioning, callbacks, intermediates, progress display, and classifier-free guidance hooks.
 - Lightweight `concat`, `crossattn`, and `hybrid` conditioning interfaces.
@@ -241,11 +241,13 @@ This writes:
 - `outputs/vqvae_chair/latent_stats.pt`
 - `outputs/vqvae_chair/latent_stats.json`
 
-Use `scale_factor = 1 / std(z_q)`. The diffusion chair script automatically uses this value when `latent_stats.json` exists.
+By default this computes statistics on the continuous encoder latent `z`, matching the SDFusion-style diffusion path. Use `scale_factor = 1 / std(z)` if you want normalized latent diffusion; otherwise the default chair diffusion config keeps `scale_factor: 1.0` to mirror the original unconditional SDFusion path. Pass `LATENT_STATS=outputs/vqvae_chair/latent_stats.json bash scripts/train_diffusion_chair.sh` to explicitly train with the computed scale. Pass `--latent_mode quantized` only when intentionally training diffusion on codebook latents `z_q`.
 
 ## Pretrained SDFusion VQ-VAE
 
 The original SDFusion ShapeNet VQ-VAE checkpoint can be used as the frozen first stage for diffusion training. It was trained with the legacy `embed_dim=3`, `n_embed=8192`, `z=3x16x16x16` setup, which matches the default legacy VQ-VAE config in this repo.
+
+Diffusion training follows the original SDFusion latent path: it trains on the continuous encoder latent `z` and quantizes generated latents during VQ-VAE decoding.
 
 Download the official checkpoint:
 

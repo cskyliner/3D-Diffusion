@@ -76,16 +76,16 @@ class BaseSDFusionSystem(nn.Module):
             parameter.requires_grad = False
 
     def encode_sdf_to_latent(self, sdf: torch.Tensor) -> torch.Tensor:
-        """Encode SDF grids into quantized, scaled latents used by diffusion training."""
+        """Encode SDF grids into continuous, scaled latents used by diffusion training."""
         self.vqvae.eval()
         z = self.vqvae.encode(sdf)
-        z_q, _, _ = self.vqvae.quantize_latent(z)
-        return z_q * self.scale_factor
+        return z * self.scale_factor
 
     def decode_latent_to_sdf(self, latent: torch.Tensor) -> torch.Tensor:
-        """Decode scaled diffusion latents back into SDF grids."""
+        """Decode scaled diffusion latents through VQ quantization back into SDF grids."""
         self.vqvae.eval()
-        return self.vqvae.decode(latent / self.scale_factor)
+        z = latent / self.scale_factor
+        return self.vqvae.decode_no_quant(z)
 
     def get_condition(self, batch: dict) -> object:
         raise NotImplementedError

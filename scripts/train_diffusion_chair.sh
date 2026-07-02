@@ -5,10 +5,10 @@ DATA_ROOT=${DATA_ROOT:-data}
 OUT_DIR=${OUT_DIR:-outputs}
 CATEGORY=${CATEGORY:-chair}
 VQVAE_CKPT=${VQVAE_CKPT:-${OUT_DIR}/vqvae_${CATEGORY}/checkpoints/vqvae_last.pt}
-LATENT_STATS=${LATENT_STATS:-${OUT_DIR}/vqvae_${CATEGORY}/latent_stats.json}
+LATENT_STATS=${LATENT_STATS:-}
 
 SCALE_OVERRIDE=()
-if [[ -f "${LATENT_STATS}" ]]; then
+if [[ -n "${LATENT_STATS}" && -f "${LATENT_STATS}" ]]; then
   SCALE_FACTOR=$(python - <<PY
 import json
 print(json.load(open("${LATENT_STATS}", "r", encoding="utf-8"))["scale_factor"])

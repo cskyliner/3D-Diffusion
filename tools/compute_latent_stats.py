@@ -13,11 +13,17 @@ from engine.trainer import build_dataloader, build_vqvae, move_to_device, resolv
 
 @torch.no_grad()
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Compute quantized VQ-VAE latent statistics and recommended scale_factor.")
+    parser = argparse.ArgumentParser(description="Compute VQ-VAE latent statistics and recommended scale_factor.")
     add_config_args(parser)
     parser.add_argument("--vqvae_ckpt", required=True, help="Path to trained VQ-VAE checkpoint.")
     parser.add_argument("--split", default="train")
     parser.add_argument("--max_batches", type=int, default=None)
+    parser.add_argument(
+        "--latent_mode",
+        choices=["continuous", "quantized"],
+        default="continuous",
+        help="Use continuous encoder latents for SDFusion-style diffusion, or quantized codebook latents.",
+    )
     args = parser.parse_args()
 
     config = load_run_config(args)
@@ -38,18 +44,20 @@ def main() -> None:
             break
         batch = move_to_device(batch, device)
         z = model.encode(batch["sdf"])
-        z_q, _, _ = model.quantize_latent(z)
-        total += z_q.numel()
-        sum_value += z_q.sum()
-        sum_sq_value += (z_q * z_q).sum()
+        latent = z
+        if args.latent_mode == "quantized":
+            latent, _, _ = model.quantize_latent(z)
+        total += latent.numel()
+        sum_value += latent.sum()
+        sum_sq_value += (latent * latent).sum()
         reduce_dims = (0, 2, 3, 4)
         if channel_sum is None:
-            channel_sum = z_q.sum(dim=reduce_dims)
-            channel_sum_sq = (z_q * z_q).sum(dim=reduce_dims)
+            channel_sum = latent.sum(dim=reduce_dims)
+            channel_sum_sq = (latent * latent).sum(dim=reduce_dims)
         else:
-            channel_sum += z_q.sum(dim=reduce_dims)
-            channel_sum_sq += (z_q * z_q).sum(dim=reduce_dims)
-        channel_count += z_q.shape[0] * z_q.shape[2] * z_q.shape[3] * z_q.shape[4]
+            channel_sum += latent.sum(dim=reduce_dims)
+            channel_sum_sq += (latent * latent).sum(dim=reduce_dims)
+        channel_count += latent.shape[0] * latent.shape[2] * latent.shape[3] * latent.shape[4]
 
     if total == 0:
         raise RuntimeError("No latent tensors were processed.")
@@ -61,6 +69,7 @@ def main() -> None:
     channel_std = (channel_sum_sq / channel_count - channel_mean * channel_mean).clamp_min(0.0).sqrt()
     report = {
         "split": args.split,
+        "latent_mode": args.latent_mode,
         "num_values": int(total),
         "mean": float(mean.detach().cpu()),
         "std": float(std.detach().cpu()),
