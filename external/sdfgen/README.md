@@ -32,7 +32,21 @@ Verify on Linux:
 
 ```bash
 chmod +x external/sdfgen/computeDistanceField
+ldd external/sdfgen/computeDistanceField
 external/sdfgen/computeDistanceField
+```
+
+If `ldd` or preprocessing reports `libGLU.so.1: cannot open shared object file`, install the OpenGL utility library on the server:
+
+```bash
+apt-get update
+apt-get install -y libglu1-mesa
+```
+
+If system packages are unavailable, install into the active conda environment instead:
+
+```bash
+conda install -c conda-forge libglu freeglut -y
 ```
 
 Use explicitly:

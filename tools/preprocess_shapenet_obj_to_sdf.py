@@ -204,16 +204,26 @@ def compute_sdfgen_sdf(
     ]
     env = os.environ.copy()
     sdfgen_dir = sdfgen.parent
+    conda_prefix = env.get("CONDA_PREFIX")
     ld_paths = [
         sdfgen_dir,
         sdfgen_dir / "tbb",
         sdfgen_dir / "tbb" / "tbb2018_20180822oss" / "lib" / "intel64" / "gcc4.7",
     ]
+    if conda_prefix:
+        ld_paths.append(Path(conda_prefix) / "lib")
     existing_ld_paths = [str(path) for path in ld_paths if path.exists()]
     current_ld_path = env.get("LD_LIBRARY_PATH")
     if existing_ld_paths:
         env["LD_LIBRARY_PATH"] = ":".join(existing_ld_paths + ([current_ld_path] if current_ld_path else []))
-    subprocess.run(cmd, cwd=work_dir, env=env, check=True)
+    try:
+        subprocess.run(cmd, cwd=work_dir, env=env, check=True)
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            "SDFGen failed. If the message mentions `libGLU.so.1`, install it with "
+            "`apt-get update && apt-get install -y libglu1-mesa`, or use conda-forge's libglu/freeglut packages. "
+            f"Check dependencies with `ldd {sdfgen}`."
+        ) from exc
     grid, params = read_sdfgen_dist(dist_path)
     sdf = downsample_sdf_grid(grid, output_res)
     if not keep_intermediate:
