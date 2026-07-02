@@ -327,7 +327,17 @@ def train_diffusion(config: dict[str, Any], out_dir: str | Path, vqvae_ckpt: str
     vqvae = build_vqvae(config)
     if not vqvae_ckpt:
         raise ValueError("train_diffusion requires a trained VQ-VAE checkpoint.")
-    load_model_checkpoint(vqvae, vqvae_ckpt, component="vqvae", strict=False)
+    vqvae_report = load_model_checkpoint(vqvae, vqvae_ckpt, component="vqvae", strict=False)
+    vqvae_load_row = {
+        "event": "vqvae_load",
+        "checkpoint": str(vqvae_ckpt),
+        "matched_keys": int(vqvae_report.get("matched_keys", 0)),
+        "matched_param_ratio": float(vqvae_report.get("matched_param_ratio", 0.0)),
+        "missing_keys": len(vqvae_report.get("missing_keys", [])),
+        "unexpected_keys": len(vqvae_report.get("unexpected_keys", [])),
+    }
+    logger.write(vqvae_load_row)
+    print(vqvae_load_row)
     system = build_uncond_system(config, vqvae).to(device)
     if resume:
         load_model_checkpoint(system, resume, component="model", strict=False)

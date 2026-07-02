@@ -140,11 +140,9 @@ class SDFVQVAE(nn.Module):
         torch.save({"model": self.state_dict(), **extra}, path)
 
     def load_checkpoint(self, path: str | Path, strict: bool = True) -> dict[str, Any]:
+        from engine.checkpoint import convert_legacy_vqvae_state, extract_state_dict
+
         state = torch.load(path, map_location="cpu")
-        if "model" in state:
-            self.load_state_dict(state["model"], strict=strict)
-        elif "vqvae" in state:
-            self.load_state_dict(state["vqvae"], strict=strict)
-        else:
-            self.load_state_dict(state, strict=strict)
+        state_dict = extract_state_dict(state, preferred_keys=("vqvae", "model", "state_dict"))
+        self.load_state_dict(convert_legacy_vqvae_state(state_dict), strict=strict)
         return state if isinstance(state, dict) else {}

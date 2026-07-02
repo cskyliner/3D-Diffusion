@@ -243,6 +243,43 @@ This writes:
 
 Use `scale_factor = 1 / std(z_q)`. The diffusion chair script automatically uses this value when `latent_stats.json` exists.
 
+## Pretrained SDFusion VQ-VAE
+
+The original SDFusion ShapeNet VQ-VAE checkpoint can be used as the frozen first stage for diffusion training. It was trained with the legacy `embed_dim=3`, `n_embed=8192`, `z=3x16x16x16` setup, which matches the default legacy VQ-VAE config in this repo.
+
+Download the official checkpoint:
+
+```bash
+mkdir -p saved_ckpt
+wget https://uofi.box.com/shared/static/zdb9pm9wmxaupzclc7m8gzluj20ja0b6.pth \
+  -O saved_ckpt/vqvae-snet-all.pth
+```
+
+Check that it matches the current config:
+
+```bash
+python tools/check_vqvae_checkpoint.py \
+  --config config/defaults/diffusion_snet_chair.yaml \
+  --ckpt saved_ckpt/vqvae-snet-all.pth
+```
+
+Optionally write a refactored checkpoint wrapper:
+
+```bash
+python tools/check_vqvae_checkpoint.py \
+  --config config/defaults/diffusion_snet_chair.yaml \
+  --ckpt saved_ckpt/vqvae-snet-all.pth \
+  --out saved_ckpt/vqvae-snet-all.refactored.pt
+```
+
+Both the original `.pth` and the converted `.pt` can be passed as `--vqvae_ckpt`.
+
+For the chair diffusion script, override the checkpoint path with:
+
+```bash
+VQVAE_CKPT=saved_ckpt/vqvae-snet-all.pth bash scripts/train_diffusion_chair.sh
+```
+
 ## Diffusion Training
 
 ```bash

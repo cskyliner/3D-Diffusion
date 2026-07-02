@@ -9,6 +9,7 @@ from torch import nn
 
 STATE_KEYS = ("model", "state_dict", "vqvae", "df", "denoiser")
 PREFIXES = ("module.", "model.", "vqvae_module.", "df_module.")
+VQVAE_PREFIXES = PREFIXES + ("vqvae.",)
 
 
 def save_checkpoint(path: str | Path, **payload: Any) -> None:
@@ -49,13 +50,38 @@ def extract_state_dict(payload: Any, preferred_keys: Iterable[str] = STATE_KEYS)
 
 
 def convert_legacy_vqvae_state(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-    converted = strip_known_prefixes(state_dict)
+    """Normalize VQ-VAE state dict keys from SDFusion and this refactor."""
+    converted = strip_known_prefixes(state_dict, prefixes=VQVAE_PREFIXES)
     output: dict[str, torch.Tensor] = {}
     for key, value in converted.items():
         if key.startswith("quantizer."):
             key = "quantize." + key[len("quantizer.") :]
         output[key] = value
     return output
+
+
+def matching_state_summary(model: nn.Module, state_dict: dict[str, torch.Tensor]) -> dict[str, Any]:
+    """Count how much of a checkpoint can be loaded into a model by exact key and shape."""
+    model_state = model.state_dict()
+    matched_keys = []
+    skipped_shape_keys = []
+    for key, value in state_dict.items():
+        target = model_state.get(key)
+        if target is None:
+            continue
+        if tuple(target.shape) == tuple(value.shape):
+            matched_keys.append(key)
+        else:
+            skipped_shape_keys.append(key)
+    loaded_params = int(sum(model_state[key].numel() for key in matched_keys))
+    model_params = int(sum(value.numel() for value in model_state.values()))
+    return {
+        "matched_keys": len(matched_keys),
+        "matched_params": loaded_params,
+        "model_params": model_params,
+        "matched_param_ratio": float(loaded_params / model_params) if model_params else 0.0,
+        "shape_mismatch_keys": skipped_shape_keys,
+    }
 
 
 def convert_legacy_diffusion_state(state_dict: dict[str, torch.Tensor], target_prefix: str | None = None) -> dict[str, torch.Tensor]:
@@ -102,9 +128,16 @@ def load_model_checkpoint(
     else:
         state_dict = strip_known_prefixes(state_dict)
     state_dict = adapt_state_dict_to_model(model, state_dict)
+    summary = matching_state_summary(model, state_dict)
+    if summary["matched_keys"] == 0:
+        raise ValueError(
+            "Checkpoint has no tensor keys matching the target model. "
+            f"component={component!r}, path={path!s}"
+        )
     incompatible = model.load_state_dict(state_dict, strict=strict)
     return {
         "payload": payload if isinstance(payload, dict) else {},
         "missing_keys": list(incompatible.missing_keys),
         "unexpected_keys": list(incompatible.unexpected_keys),
+        **summary,
     }
