@@ -311,6 +311,8 @@ Outputs:
 
 During training, `train_diffusion.py` logs training loss, validation diffusion loss, and sample snapshot metrics. The snapshot report includes mesh extraction success rate, SDF statistics, occupancy ratio, and an L1 diversity proxy. Configure cadence with `train.eval_every`, `train.sample_every`, `train.sample_num`, `train.sample_steps`, and `train.sample_sampler`.
 
+`diffusion_last.pt` and `diffusion_step_*.pt` store compact denoiser checkpoints; the VQ-VAE is loaded separately through `--vqvae_ckpt`.
+
 ## Unconditional Inference
 
 ```bash

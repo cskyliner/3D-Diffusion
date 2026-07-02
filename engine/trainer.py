@@ -402,12 +402,11 @@ def train_diffusion(config: dict[str, Any], out_dir: str | Path, vqvae_ckpt: str
             system.train()
         if step % save_every == 0 or step == max_steps:
             checkpoint_payload = {
-                "model": system.state_dict(),
-                "denoiser": system.denoiser.state_dict(),
-                "optimizer": optimizer.state_dict(),
+                "model": system.denoiser.state_dict(),
                 "step": step,
                 "vqvae_ckpt": str(vqvae_ckpt),
                 "scale_factor": float(config.get("diffusion", {}).get("scale_factor", 1.0)),
+                "checkpoint_type": "denoiser",
             }
             step_ckpt = checkpoint_dir / f"diffusion_step_{step:07d}.pt"
             save_checkpoint(step_ckpt, **checkpoint_payload)
