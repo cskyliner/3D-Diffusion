@@ -30,17 +30,30 @@ def sdf_to_mesh(sdf: np.ndarray, ply_path: str | Path, level: float = 0.0) -> di
     output = Path(ply_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     grid = np.asarray(sdf, dtype=np.float32).squeeze()
+    stats = {"min": float(grid.min()), "max": float(grid.max()), "level": float(level)}
     try:
-        try:
-            from skimage import measure
+        from skimage import measure
 
-            vertices, faces, normals, values = measure.marching_cubes(grid, level=level)
-        except ImportError:
+        vertices, faces, normals, values = measure.marching_cubes(grid, level=level)
+        write_ply(vertices, faces, output)
+        return {"success": True, "vertices": int(len(vertices)), "faces": int(len(faces)), "path": str(output), "backend": "skimage", **stats}
+    except ImportError as skimage_exc:
+        try:
             import mcubes
 
             vertices, faces = mcubes.marching_cubes(grid, level)
-        write_ply(vertices, faces, output)
-        return {"success": True, "vertices": int(len(vertices)), "faces": int(len(faces)), "path": str(output)}
+            write_ply(vertices, faces, output)
+            return {"success": True, "vertices": int(len(vertices)), "faces": int(len(faces)), "path": str(output), "backend": "mcubes", **stats}
+        except Exception as mcubes_exc:
+            output.write_text(_empty_ply(), encoding="utf-8")
+            return {
+                "success": False,
+                "error": "mesh extraction dependencies are unavailable",
+                "skimage_error": repr(skimage_exc),
+                "mcubes_error": repr(mcubes_exc),
+                "path": str(output),
+                **stats,
+            }
     except Exception as exc:
         output.write_text(_empty_ply(), encoding="utf-8")
-        return {"success": False, "error": str(exc), "path": str(output)}
+        return {"success": False, "error": str(exc), "path": str(output), "backend": "skimage", **stats}
